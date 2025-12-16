@@ -1,59 +1,47 @@
 #-------------------------------------------------------------------------------
-# MNIST Dataset Loader
+# MNIST Data Loader
 #-------------------------------------------------------------------------------
 
 from __future__ import annotations
-import gzip
-import struct
 from pathlib import Path
-from urllib.request import urlretrieve
-
 import numpy as np
 
-#-------------------------------------------------------------------------------
-# MNIST dataset files
+def load_mnist_openml(
+    data_home: str | Path = "~/.cache/",
+    cache: bool = True,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Load MNIST (28x28) via scikit-learn / OpenML.
 
-MNIST_URL = "https://yann.lecun.com/exdb/mnist/"
-FILES = {
-    "train_images": "train-images-idx3-ubyte.gz",
-    "train_labels": "train-labels-idx1-ubyte.gz",
-    "test_images": "t10k-images-idx3-ubyte.gz",
-    "test_labels": "t10k-labels-idx1-ubyte.gz",
-}
+    Returns:
+        X : (n_samples, 28, 28) uint8, values 0..255
+        y : (n_samples,) int labels 0..9
+    """
+    data_home = Path(data_home).expanduser()
+    data_home.mkdir(parents=True, exist_ok=True)
 
-#-------------------------------------------------------------------------------
+    from sklearn.datasets import fetch_openml
 
-# Download MNIST files if not present
-def _download_mnist(dst: Path) -> None:
-    dst.mkdir(parents=True, exist_ok=True)
-    for fname in FILES.values():
-        out = dst / fname
-        if out.exists():
-            continue
-        urlretrieve(MNIST_URL + fname, out)
+    # load data
+    mnist = fetch_openml(
+        "mnist_784",
+        version=1,
+        as_frame=False,
+        cache=cache,
+        data_home=str(data_home),
+        parser="auto",
+    )
 
-# Read IDX formatted files
-def _read_idx_images(path_gz: Path) -> np.ndarray:
-    with gzip.open(path_gz, "rb") as f:
-        magic, n, rows, cols = struct.unpack(">IIII", f.read(16))
-        assert magic == 2051, f"Bad magic for images: {magic}"
-        data = np.frombuffer(f.read(), dtype=np.uint8)
-    return data.reshape(n, rows, cols)
+    # assign features and labels
+    X = mnist.data
+    y = mnist.target
 
-# Read IDX formatted files
-def _read_idx_labels(path_gz: Path) -> np.ndarray:
-    with gzip.open(path_gz, "rb") as f:
-        magic, n = struct.unpack(">II", f.read(8))
-        assert magic == 2049, f"Bad magic for labels: {magic}"
-        data = np.frombuffer(f.read(), dtype=np.uint8)
-    return data.reshape(n)
+    # safety & normalization
+    X = np.asarray(X, dtype=np.float32)
+    if X.max() <= 1.0:
+        X *= 255.0
 
-# Main function to load MNIST dataset
-def load_mnist(root: str | Path = ".cache/mnist") -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    root = Path(root)
-    _download_mnist(root)
-    Xtr = _read_idx_images(root / FILES["train_images"])
-    ytr = _read_idx_labels(root / FILES["train_labels"])
-    Xte = _read_idx_images(root / FILES["test_images"])
-    yte = _read_idx_labels(root / FILES["test_labels"])
-    return Xtr, ytr, Xte, yte
+    X = X.reshape(-1, 28, 28).astype(np.uint8)
+    y = y.astype(int)
+
+    return X, y
