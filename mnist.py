@@ -5,8 +5,14 @@
 from __future__ import annotations
 from pathlib import Path
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-def load_mnist_openml(
+#-------------------------------------------------------------------------------
+# MNIST Data Loading and Preprocessing Utilities
+#-------------------------------------------------------------------------------
+
+def load_mnist(
     data_home: str | Path = "~/.cache/",
     cache: bool = True,
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -46,31 +52,9 @@ def load_mnist_openml(
 
     return X, y
 
-#-------------------------------------------------------------------------------
-# MNIST Plotting Utilities
-#-------------------------------------------------------------------------------
-
-def plot_mnist_sample(image: np.ndarray, figsize: np.ndarray = (4, 4)) -> None:
-    """
-    Plot given mnist sample.
-
-    Args:
-        image : (28, 28) uint8
-        figsize: ndarray (4, 4) figure size
-    """
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-
-    fig, ax = plt.subplots(figsize=figsize)
-    sns.heatmap(image, cmap="gray", cbar=False, xticklabels=False, yticklabels=False, ax=ax)
-    plt.show()
 
 
-#-------------------------------------------------------------------------------
-# MNIST Image Processing Utilities
-#-------------------------------------------------------------------------------
-
-def binarize_mnist(img: np.ndarray, method: str = "threshold", thr: int = 64, perc: int = 75) -> np.ndarray:
+def binarize_mnist(img: np.ndarray, method: str = "threshold", thr: int = 64) -> np.ndarray:
     """
     img: (H,W) uint8 in [0,255]
     returns: binary mask uint8 {0,1} where 1 = ink/foreground
@@ -84,7 +68,7 @@ def binarize_mnist(img: np.ndarray, method: str = "threshold", thr: int = 64, pe
 
     if method == "percentile":
         # good for prototypes or varying contrast
-        t = np.percentile(img, perc)  # tweak 70-85 if needed
+        t = np.percentile(img, 75)  # tweak 70-85 if needed
         return (img >= t).astype(np.uint8)
 
     if method == "mean_std":
@@ -96,52 +80,11 @@ def binarize_mnist(img: np.ndarray, method: str = "threshold", thr: int = 64, pe
 
     raise ValueError(f"Unknown method={method!r}")
 
-
-def center_by_centroid(mask: np.ndarray, fill: int = 0) -> np.ndarray:
-    """
-    Shift a binary mask so that its centroid is at the image center.
-    mask: (H,W) {0,1}
-    """
-    H, W = mask.shape
-    ys, xs = np.nonzero(mask)
-
-    if len(xs) == 0:
-        # empty -> return as-is
-        return mask.copy()
-
-    cy = ys.mean()
-    cx = xs.mean()
-
-    # desired centroid:
-    ty = (H - 1) / 2.0
-    tx = (W - 1) / 2.0
-
-    dy = int(round(ty - cy))
-    dx = int(round(tx - cx))
-
-    out = np.full((H, W), fill_value=fill, dtype=mask.dtype)
-
-    # compute source/dest slices safely
-    y0_src = max(0, -dy)
-    y1_src = min(H, H - dy)
-    x0_src = max(0, -dx)
-    x1_src = min(W, W - dx)
-
-    y0_dst = max(0, dy)
-    y1_dst = min(H, H + dy)
-    x0_dst = max(0, dx)
-    x1_dst = min(W, W + dx)
-
-    out[y0_dst:y1_dst, x0_dst:x1_dst] = mask[y0_src:y1_src, x0_src:x1_src]
-    return out
-
-
 def mnist_to_state(
     img: np.ndarray,
     *,
     bin_method: str = "threshold",
     thr: int = 64,
-    center: bool = True,
     invert: bool = False,
 ) -> np.ndarray:
     """
@@ -156,9 +99,23 @@ def mnist_to_state(
     if invert:
         mask = 1 - mask
 
-    if center:
-        mask = center_by_centroid(mask)
-
     # map {0,1} -> {-1,+1}
     state = np.where(mask > 0, 1, -1).astype(np.int8).reshape(-1)
     return state
+
+
+#-------------------------------------------------------------------------------
+# MNIST Plotting Utilities
+#-------------------------------------------------------------------------------
+
+def plot_mnist_sample(image: np.ndarray, figsize: tuple = (4, 4)) -> None:
+    """
+    Plot given mnist sample.
+
+    Args:
+        image : (28, 28) uint8
+        figsize : (4, 4) figure size
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+    sns.heatmap(image, cmap="gray", cbar=False, xticklabels=False, yticklabels=False, ax=ax)
+    plt.show()
