@@ -11,80 +11,9 @@ from matplotlib import colors
 def sign(x):
     """Sign function returning +1 or -1."""
     
-    return np.where(x >= 0, 1, -1)
-
-def load_patterns(filename="patterns8.csv"):
-    """
-    Reads a CSV file containing one pattern per row.
-    The first column is 'name', followed by columns pixel_0..pixel_63.
-    Returns a dictionary: {name: np.array([...])}.
-    """
-    
-    patterns_dict = {}
-    
-    with open(filename, 'r', newline='') as csvfile:
-        reader = csv.reader(csvfile)
-        
-        # Skip the header row
-        header = next(reader)
-        
-        for row in reader:
-            name = row[0]  
-            # Convert the next 64 columns from strings to integers
-            pixels = [int(value) for value in row[1:1+64]]
-            
-            # Store in the dictionary
-            patterns_dict[name] = np.array(pixels, dtype=int)
-    
-    return patterns_dict
-
-def display_pattern(pattern, title=None, cmap=colors.ListedColormap(["lightblue", "orange"]), figname=None, 
-                    width=600, height=600, dpi=96):
-    """
-    Display the 8x8 pattern as a heatmap.
-    pattern: 1D or 2D numpy array of shape (64,) or (8,8) with values in {+1, -1}.
-    """
-
-    # Reshape the input image
-    if pattern.ndim == 1:
-        pattern = pattern.reshape(8, 8)
-
-    # Set dimensions divisible by 2
-    figsize = (width / dpi, height / dpi)
-
-    # Create the figure
-    fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
-
-    ax.imshow(pattern, cmap=cmap, vmin=-1, vmax=1)
-    
-    if title:
-        ax.set_title(title)    
-    plt.axis("off")
-
-    if figname:
-        # Save figure
-        plt.savefig(figname, format="png", dpi=dpi, bbox_inches="tight")
-        plt.close()
-    else:
-        plt.show()
-
-def flatten_pattern(pattern_2d):
-    """Convert an 8x8 pattern (with 1 or -1) to a 1D array of length 64."""
-    
-    return pattern_2d.reshape(-1)
-
-def generate_noisy_pattern(pattern, noise_level=0.1):
-    """
-    Flip a fraction of pixels in a pattern to generate noise.
-    noise_level: fraction of pixels to flip (0.0 - 1.0).
-    """
-    
-    noisy_pattern = pattern.copy()
-    n_to_flip = int(len(pattern) * noise_level)
-    flip_indices = np.random.choice(len(pattern), n_to_flip, replace=False)
-    noisy_pattern[flip_indices] *= -1
-    
-    return noisy_pattern
+    if x > 0:  return 1
+    if x < 0:  return -1
+    return x
 
 ##################################################
 # Hopfield Network Class
@@ -112,8 +41,8 @@ class HopfieldNetwork:
         # Zero out the diagonal
         np.fill_diagonal(self.W, 0)
 
-        # Normalize weights by number of patterns
-        # self.W /= len(patterns)
+        # Normalize weights by number of neurons
+        self.W /= self.n_neurons
 
     def retrieve(self, pattern, max_iterations=50):
         """
