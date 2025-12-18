@@ -217,19 +217,24 @@ class ImageDataset28:
             parser="auto",
         )
 
+        # Convert to numpy arrays
         X = np.asarray(bunch.data, dtype=np.float32)
         y = np.asarray(bunch.target)
 
+        # Convert string labels to integers if needed
         if y.dtype.kind in {"U", "S", "O"}:
             y = y.astype(int)
 
+        # Rescale to [0, 255] uint8 if needed
         if X.max() <= 1.0:
             X *= 255.0
         X = np.clip(X, 0, 255).astype(np.uint8)
 
+        # Check shape
         if X.shape[1] != 784:
             raise ValueError(f"Expected 784 features for 28x28, got {X.shape[1]}")
 
+        # Reshape to (N, 28, 28)
         X = X.reshape(-1, 28, 28)
         return X, y.astype(np.int64), name
 
@@ -243,6 +248,7 @@ class ImageDataset28:
         percentile: float,
     ) -> np.ndarray:
         if method == "threshold":
+            # Values above the threshold become 1
             return (X >= np.uint8(thr)).astype(np.uint8)
 
         if method == "percentile":
