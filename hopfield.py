@@ -51,7 +51,7 @@ class HopfieldNetwork:
         mean = P.mean(axis=1, keepdims=True)
         centered = P - mean
         self.W = centered @ np.linalg.pinv(centered.T @ centered) @ centered.T
-        # np.fill_diagonal(self.W, 0)
+        np.fill_diagonal(self.W, 0)
 
     def train_pseudoinverse_damped(self, patterns, lam=0.1, centered=True, zero_diagonal=False):
         """
@@ -166,28 +166,24 @@ class HopfieldNetwork:
         
         return -.5 * np.dot(state, self.W.dot(state))
 
-    def check_stability(self, patterns, retrain=False):
+    def get_margins(self, patterns):
         """
-        Check if given patterns are fixed points under the current weights.
-        If ``retrain`` is True, the network is retrained on ``patterns`` first.
-        
-        Returns a list of dicts with min margin and stability flag for each pattern.
-        """
-        if retrain:
-            self.train(patterns)
+        Calculate margins for each pattern.
+        A pattern is fixed point under the current weights, if the margin is non-negative.
 
+        Returns a list of min margin for each pattern.
+        """
         results = []
         for p in patterns:
             if p.shape != (self.n_neurons,) or not np.isin(p, (-1, 1)).all():
                 raise ValueError("patterns must be {+1, -1} vectors with shape (n_neurons,)")
             h = self.W @ p
             margin = (p * h).min()
-            results.append({"margin": margin, "stable": margin > 0})
+            results.append(margin)
         return results
 
     def get_weights(self):
         """
         Return the current weight matrix of the Hopfield network.
         """
-        
         return self.W
