@@ -5,17 +5,6 @@ import matplotlib.pyplot as plt
 from matplotlib import colors
 
 ##################################################
-# Utility functions
-##################################################
-
-def sign(x):
-    """Sign function returning +1 or -1."""
-    
-    if x > 0:  return 1
-    if x < 0:  return -1
-    return x
-
-##################################################
 # Hopfield Network Class
 ##################################################
 
@@ -30,6 +19,9 @@ class HopfieldNetwork:
         Train the network using Hebbian learning.
         patterns: list of 1D numpy arrays of shape (n_neurons,) with values {+1, -1}.
         """
+        # Validate patterns
+        if any((p.shape != (self.n_neurons,) or not np.isin(p, (-1, 1)).all()) for p in patterns):
+            raise ValueError("patterns must be a list of {+1, -1} vectors with shape (n_neurons,)")
         
         # Reset weights
         self.W = np.zeros((self.n_neurons, self.n_neurons))
@@ -43,6 +35,47 @@ class HopfieldNetwork:
 
         # Normalize weights by number of neurons
         self.W /= self.n_neurons
+        
+    def train_pseudoinverse_centered(self, patterns):
+        """
+        Train using centered pseudoinverse learning to handle correlated patterns.
+        patterns: array-like of shape (num_patterns, n_neurons) with values {+1, -1}.
+        """
+        patterns = np.asarray(patterns)
+        if patterns.ndim != 2 or patterns.shape[1] != self.n_neurons:
+            raise ValueError("patterns must be shape (num_patterns, n_neurons)")
+        if not np.isin(patterns, (-1, 1)).all():
+            raise ValueError("patterns must be {+1, -1}")
+
+        P = patterns.T  # shape (n_neurons, num_patterns)
+        mean = P.mean(axis=1, keepdims=True)
+        centered = P - mean
+        self.W = centered @ np.linalg.pinv(centered.T @ centered) @ centered.T
+        # np.fill_diagonal(self.W, 0)
+
+    def train_pseudoinverse_damped(self, patterns, lam=0.1, centered=True, zero_diagonal=False):
+        """
+        Train using a damped pseudoinverse, optionally centered, to improve stability
+        on correlated patterns.
+        lam: Tikhonov damping parameter (>= 0).
+        centered: subtract pixel-wise mean before computing weights.
+        zero_diagonal: if True, zero out the diagonal after training.
+        """
+        patterns = np.asarray(patterns)
+        if patterns.ndim != 2 or patterns.shape[1] != self.n_neurons:
+            raise ValueError("patterns must be shape (num_patterns, n_neurons)")
+        if not np.isin(patterns, (-1, 1)).all():
+            raise ValueError("patterns must be {+1, -1}")
+        if lam < 0:
+            raise ValueError("lam must be non-negative")
+
+        P = patterns.T  # shape (n_neurons, num_patterns)
+        X = P - P.mean(axis=1, keepdims=True) if centered else P
+        gram = X.T @ X
+        gram_damped = gram + lam * np.eye(gram.shape[0])
+        self.W = X @ np.linalg.inv(gram_damped) @ X.T
+        if zero_diagonal:
+            np.fill_diagonal(self.W, 0)
 
     def retrieve(self, pattern, max_iterations=50):
         """
@@ -50,25 +83,31 @@ class HopfieldNetwork:
         pattern: 1D numpy array of shape (n_neurons,) with values {+1, -1}.
         max_iterations: maximum number of asynchronous update cycles.
         """
+        # Validate pattern
+        if pattern.shape != (self.n_neurons,) or not np.isin(pattern, (-1, 1)).all():
+            raise ValueError("pattern must be a {+1, -1} vector with shape (n_neurons,)")
         
         state = pattern.copy()
+        
+        # List of neuron indices for asynchronous updates
+        indices = np.arange(self.n_neurons)
 
-        for _ in range(max_iterations):
+        for iter in range(max_iterations):
             # Asynchronous update: pick neurons in random order
-            indices = np.arange(self.n_neurons)
             np.random.shuffle(indices)
 
             changed = False
             for i in indices:
                 # Calculate internal potetial of neuron
                 xi = np.dot(self.W[i, :], state)
-                # Set new state
-                new_state = sign(xi)
-                if new_state != state[i]:
-                    state[i] =  new_state
-                    changed = True
+                if xi != 0:
+                    new_state = 1 if xi > 0 else -1
+                    if new_state != state[i]:
+                        state[i] =  new_state
+                        changed = True
 
             if not changed:
+                print(f"Converged after {iter:d} iterations.")
                 break
 
         return state
@@ -83,24 +122,29 @@ class HopfieldNetwork:
                 initial state and ``history[i]`` (``i > 0``) is the state after
                 completing iteration ``i`` of asynchronous updates.
         """
+        # Validate pattern
+        if pattern.shape != (self.n_neurons,) or not np.isin(pattern, (-1, 1)).all():
+            raise ValueError("pattern must be a {+1, -1} vector with shape (n_neurons,)")
         
         state = pattern.copy()    # Input state
         history = [state.copy()]  # State evolution
+        
+        # List of neuron indices for asynchronous updates
+        indices = np.arange(self.n_neurons)
 
-        for _ in range(max_iterations):
+        for iter in range(max_iterations):
             # Asynchronous update: pick neurons in random order
-            indices = np.arange(self.n_neurons)
             np.random.shuffle(indices)
 
             changed = False
             for i in indices:
-                # Calculate internal potential
+                # Calculate internal potetial of neuron
                 xi = np.dot(self.W[i, :], state)
-                # Set new state
-                new_state = sign(xi)
-                if new_state != state[i]:
-                    changed = True
-                    state[i] = new_state
+                if xi != 0:
+                    new_state = 1 if xi > 0 else -1
+                    if new_state != state[i]:
+                        changed = True
+                        state[i] = new_state
 
             # Append state after finishing asynchronous updates for this
             # iteration. This keeps ``history`` aligned with the number of
@@ -109,6 +153,7 @@ class HopfieldNetwork:
 
             # If no value changes, finish the training process
             if not changed:
+                print(f"Converged after {iter:d} iterations.")
                 break
 
         return history
@@ -120,6 +165,25 @@ class HopfieldNetwork:
         """
         
         return -.5 * np.dot(state, self.W.dot(state))
+
+    def check_stability(self, patterns, retrain=False):
+        """
+        Check if given patterns are fixed points under the current weights.
+        If ``retrain`` is True, the network is retrained on ``patterns`` first.
+        
+        Returns a list of dicts with min margin and stability flag for each pattern.
+        """
+        if retrain:
+            self.train(patterns)
+
+        results = []
+        for p in patterns:
+            if p.shape != (self.n_neurons,) or not np.isin(p, (-1, 1)).all():
+                raise ValueError("patterns must be {+1, -1} vectors with shape (n_neurons,)")
+            h = self.W @ p
+            margin = (p * h).min()
+            results.append({"margin": margin, "stable": margin > 0})
+        return results
 
     def get_weights(self):
         """
