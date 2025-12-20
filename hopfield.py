@@ -75,14 +75,18 @@ class HopfieldNetwork:
         # Update weights according to chosen learning method
         method = self.learning_method
         num_total = self.memories.shape[0]
+        # Hebbian update
         if method == "hebbian" or num_total < 2:
-            if method != "hebbian" and num_total < 2:
+            # Print note if falling back to Hebbian
+            if method != "hebbian":
                 print("Note: Only one pattern stored; falling back to Hebbian update.")
             # Add contributions from new patterns; keep previously memorized weights.
             self.W += patterns.T @ patterns / self.n_neurons
             np.fill_diagonal(self.W, 0)
+        # Centered pseudoinverse
         elif method == "centered":
             self._pseudoinverse_centered()
+        # Damped pseudoinverse
         elif method == "damped":
             self._pseudoinverse_damped(
                 lam=self.damped_lam,
