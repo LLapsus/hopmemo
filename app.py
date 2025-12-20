@@ -81,9 +81,9 @@ with right:
     else:
         rng = np.random.default_rng(int(st.session_state.rng_seed))
 
-        # train network from stored patterns
+        # memorize stored patterns
         net = HopfieldNetwork(N * N)
-        net.train(np.array(st.session_state.stored))
+        net.memorize(np.array(st.session_state.stored))
 
         current = grid_to_state(st.session_state.grid)
 
@@ -98,10 +98,11 @@ with right:
                 st.session_state.noisy_state = corrupt_state(current, flip_prob, rng)
             # try to use history if available in your implementation
             try:
-                recalled, history = net.retrieve_with_history(st.session_state.noisy_state, max_steps=50)
+                history = net.retrieve_with_history(st.session_state.noisy_state, max_iterations=50)
+                recalled = history[-1]
                 st.session_state.history = history
             except Exception:
-                recalled = net.retrieve(st.session_state.noisy_state, max_steps=50)
+                recalled = net.retrieve(st.session_state.noisy_state, max_iterations=50)
                 st.session_state.history = None
             st.session_state.grid = state_to_grid(recalled)
 

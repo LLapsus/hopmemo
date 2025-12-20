@@ -1,71 +1,117 @@
 import numpy as np
-import pandas as pd
-import csv
-import matplotlib.pyplot as plt
-from matplotlib import colors
 
 ##################################################
 # Hopfield Network Class
 ##################################################
 
 class HopfieldNetwork:
-    def __init__(self, n_neurons=64):
+    def __init__(self, n_neurons=64, learning_method="hebbian", damped_lam=0.1, damped_centered=True, damped_zero_diagonal=False):
+        # Number of neurons in the network
         self.n_neurons = n_neurons
+        # Learning strategy for memorize: "hebbian", "centered", or "damped"
+        self.learning_method = learning_method            # Method for weight update
+        self.damped_lam = damped_lam                      # Damping factor for damped pseudoinverse
+        self.damped_centered = damped_centered            # Centering option for damped pseudoinverse
+        self.damped_zero_diagonal = damped_zero_diagonal  # Zero diagonal option for damped pseudoinverse
         # Initialize weight matrix
-        self.W = np.zeros((n_neurons, n_neurons))
+        self.W = np.zeros((n_neurons, n_neurons))         # Weight matrix initialized to zero
+        # Stored patterns remembered through memorize
+        self.memories = np.empty((0, n_neurons), dtype=int)
+        # Optional labels for stored patterns (aligned with memories rows)
+        self.memory_labels = np.empty((0,), dtype=object)
 
-    def train(self, patterns):
+    def reset_network(self):
         """
-        Train the network using Hebbian learning.
-        patterns: list of 1D numpy arrays of shape (n_neurons,) with values {+1, -1}.
+        Reset synaptic weights and stored memories to initial state.
         """
-        # Validate patterns
-        if any((p.shape != (self.n_neurons,) or not np.isin(p, (-1, 1)).all()) for p in patterns):
-            raise ValueError("patterns must be a list of {+1, -1} vectors with shape (n_neurons,)")
-        
-        # Reset weights
+        # Reset stored memories
+        self.memories = np.empty((0, self.n_neurons), dtype=int)
+        self.memory_labels = np.empty((0,), dtype=object)
+        # Reset weight matrix
         self.W = np.zeros((self.n_neurons, self.n_neurons))
-
-        for p in patterns:
-            # Outer product
-            self.W += np.outer(p, p)
-
-        # Zero out the diagonal
-        np.fill_diagonal(self.W, 0)
-
-        # Normalize weights by number of neurons
-        self.W /= self.n_neurons
         
-    def train_pseudoinverse_centered(self, patterns):
+    def num_memories(self):
         """
-        Train using centered pseudoinverse learning to handle correlated patterns.
-        patterns: array-like of shape (num_patterns, n_neurons) with values {+1, -1}.
+        Return the number of patterns currently stored in the network.
         """
-        patterns = np.asarray(patterns)
+        return self.memories.shape[0]
+
+    def memorize(self, patterns, labels=None):
+        """
+        Store patterns and update weights according to `learning_method`.
+        - hebbian: incremental Hebbian update (adds outer products of new patterns).
+        - centered: recompute weights via centered pseudoinverse on all memories.
+        - damped: recompute weights via damped pseudoinverse on all memories.
+        Can be called repeatedly; new patterns are appended to `self.memories`.
+
+        patterns: array-like of shape (num_patterns, n_neurons) or iterable of
+            1D arrays with values {+1, -1}.
+        labels: optional array-like of length num_patterns with names for each pattern.
+        """
+        patterns = np.asarray(patterns, dtype=int)
+        if patterns.ndim == 1:
+            patterns = patterns.reshape(1, -1)
         if patterns.ndim != 2 or patterns.shape[1] != self.n_neurons:
             raise ValueError("patterns must be shape (num_patterns, n_neurons)")
         if not np.isin(patterns, (-1, 1)).all():
             raise ValueError("patterns must be {+1, -1}")
+        num_new = patterns.shape[0]
 
+        if labels is None:
+            label_arr = np.array([None] * num_new, dtype=object)
+        else:
+            label_arr = np.asarray(labels, dtype=object)
+            if label_arr.shape != (num_new,):
+                raise ValueError("labels must have length equal to number of patterns")
+
+        # Store new memories
+        if self.memories.size == 0:
+            self.memories = patterns.copy()
+            self.memory_labels = label_arr.copy()
+        else:
+            self.memories = np.vstack([self.memories, patterns])
+            self.memory_labels = np.hstack([self.memory_labels, label_arr])
+
+        # Update weights according to chosen learning method
+        method = self.learning_method
+        num_total = self.memories.shape[0]
+        if method == "hebbian" or num_total < 2:
+            if method != "hebbian" and num_total < 2:
+                print("Note: Only one pattern stored; falling back to Hebbian update.")
+            # Add contributions from new patterns; keep previously memorized weights.
+            self.W += patterns.T @ patterns / self.n_neurons
+            np.fill_diagonal(self.W, 0)
+        elif method == "centered":
+            self._pseudoinverse_centered()
+        elif method == "damped":
+            self._pseudoinverse_damped(
+                lam=self.damped_lam,
+                centered=self.damped_centered,
+                zero_diagonal=self.damped_zero_diagonal,
+            )
+        else:
+            raise ValueError(f"Unknown learning_method '{method}'. Use 'hebbian', 'centered', or 'damped'.")
+        
+    def _pseudoinverse_centered(self):
+        """
+        Train using centered pseudoinverse learning on all stored memories.
+        Assumes inputs were validated in `memorize`.
+        """
+        patterns = self.memories
         P = patterns.T  # shape (n_neurons, num_patterns)
         mean = P.mean(axis=1, keepdims=True)
         centered = P - mean
         self.W = centered @ np.linalg.pinv(centered.T @ centered) @ centered.T
         np.fill_diagonal(self.W, 0)
 
-    def train_pseudoinverse_damped(self, patterns, lam=0.1, centered=True, zero_diagonal=False):
+    def _pseudoinverse_damped(self, lam=0.1, centered=True, zero_diagonal=False):
         """
-        Train using a damped pseudoinverse, optionally centered, to improve stability
-        on correlated patterns.
+        Train using a damped pseudoinverse on all stored memories.
         lam: Tikhonov damping parameter (>= 0).
         centered: subtract pixel-wise mean before computing weights.
         zero_diagonal: if True, zero out the diagonal after training.
         """
-        patterns = np.asarray(patterns)
-        if patterns.ndim != 2 or patterns.shape[1] != self.n_neurons:
-            raise ValueError("patterns must be shape (num_patterns, n_neurons)")
-        if not np.isin(patterns, (-1, 1)).all():
-            raise ValueError("patterns must be {+1, -1}")
+        patterns = self.memories
         if lam < 0:
             raise ValueError("lam must be non-negative")
 
@@ -166,24 +212,28 @@ class HopfieldNetwork:
         
         return -.5 * np.dot(state, self.W.dot(state))
 
-    def get_margins(self, patterns):
-        """
-        Calculate margins for each pattern.
-        A pattern is fixed point under the current weights, if the margin is non-negative.
-
-        Returns a list of min margin for each pattern.
-        """
-        results = []
-        for p in patterns:
-            if p.shape != (self.n_neurons,) or not np.isin(p, (-1, 1)).all():
-                raise ValueError("patterns must be {+1, -1} vectors with shape (n_neurons,)")
-            h = self.W @ p
-            margin = (p * h).min()
-            results.append(margin)
-        return results
-
     def get_weights(self):
         """
         Return the current weight matrix of the Hopfield network.
         """
         return self.W
+    
+    def check_stability(self):
+        """
+        Compute margin for each stored pattern.
+        Returns a dict mapping label -> margin (None used if label missing).
+        """
+        if self.memories.size == 0:
+            return {}
+
+        labels = self.memory_labels
+        if labels.shape[0] != self.memories.shape[0]:
+            # Defensive: align length if somehow mismatched
+            labels = np.resize(labels, (self.memories.shape[0],))
+
+        result = {}
+        for p, label in zip(self.memories, labels):
+            h = self.W @ p
+            margin = (p * h).min()
+            result[label] = margin
+        return result
