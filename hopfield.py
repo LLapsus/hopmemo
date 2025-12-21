@@ -127,11 +127,12 @@ class HopfieldNetwork:
         if zero_diagonal:
             np.fill_diagonal(self.W, 0)
 
-    def retrieve(self, pattern, max_iterations=50):
+    def retrieve(self, pattern, max_iterations=50, history=False):
         """
         Retrieve a stored pattern starting from an initial state.
         pattern: 1D numpy array of shape (n_neurons,) with values {+1, -1}.
         max_iterations: maximum number of asynchronous update cycles.
+        history: if True, return detailed update history.
         """
         # Validate pattern
         if pattern.shape != (self.n_neurons,) or not np.isin(pattern, (-1, 1)).all():
@@ -139,10 +140,25 @@ class HopfieldNetwork:
         
         state = pattern.copy()
         
+        # Initialize tracking lists
+        if history:
+            history = {
+                'iteration': [],
+                'neuron': [],
+                'value': [],
+                'energy': []
+            }
+            E0 = self.energy(state)
+            for i in range(self.n_neurons):
+                history['iteration'].append(0)     # Iteration number
+                history['neuron'].append(i)        # Neuron index
+                history['value'].append(state[i])  # Value of the neuron
+                history['energy'].append(E0)       # Energy of the network
+        
         # List of neuron indices for asynchronous updates
         indices = np.arange(self.n_neurons)
 
-        for iter in range(max_iterations):
+        for iter in range(1, max_iterations+1):
             # Asynchronous update: pick neurons in random order
             np.random.shuffle(indices)
 
@@ -155,68 +171,32 @@ class HopfieldNetwork:
                     if new_state != state[i]:
                         state[i] =  new_state
                         changed = True
-
+                # Record the update
+                if history:
+                    history['iteration'].append(iter)
+                    history['neuron'].append(i)
+                    history['value'].append(state[i])
+                    history['energy'].append(self.energy(state))  
+        
+            # If no changes occurred during the iteration, the dynamics have converged
             if not changed:
                 print(f"Converged after {iter:d} iterations.")
                 break
 
-        return state
-
-    def retrieve_with_history(self, pattern, max_iterations=50):
-        """
-        Similar to `retrieve`, but also returns the entire history (list of states)
-        as the network iterates.
-        
-        Returns:
-            history: List of states (numpy arrays). ``history[0]`` is the
-                initial state and ``history[i]`` (``i > 0``) is the state after
-                completing iteration ``i`` of asynchronous updates.
-        """
-        # Validate pattern
-        if pattern.shape != (self.n_neurons,) or not np.isin(pattern, (-1, 1)).all():
-            raise ValueError("pattern must be a {+1, -1} vector with shape (n_neurons,)")
-        
-        state = pattern.copy()    # Input state
-        history = [state.copy()]  # State evolution
-        
-        # List of neuron indices for asynchronous updates
-        indices = np.arange(self.n_neurons)
-
-        for iter in range(max_iterations):
-            # Asynchronous update: pick neurons in random order
-            np.random.shuffle(indices)
-
-            changed = False
-            for i in indices:
-                # Calculate internal potetial of neuron
-                xi = np.dot(self.W[i, :], state)
-                if xi != 0:
-                    new_state = 1 if xi > 0 else -1
-                    if new_state != state[i]:
-                        changed = True
-                        state[i] = new_state
-
-            # Append state after finishing asynchronous updates for this
-            # iteration. This keeps ``history`` aligned with the number of
-            # completed update cycles.
-            history.append(state.copy())
-
-            # If no value changes, finish the training process
-            if not changed:
-                print(f"Converged after {iter:d} iterations.")
-                break
-
-        return history
+        # Return final state and retrieval history if requested
+        if history:
+            return state, history
+        else:
+            return state
 
     def energy(self, state):
         """
         Compute the Hopfield energy of a given state using:
             E(s) = -1/2 * s^T * W * s
         """
-        
         return -.5 * np.dot(state, self.W.dot(state))
 
-    def get_weights(self):
+    def weights(self):
         """
         Return the current weight matrix of the Hopfield network.
         """
