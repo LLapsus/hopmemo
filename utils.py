@@ -8,13 +8,13 @@ from hopfield import HopfieldNetwork
 # Hopfield Utility Functions
 ##################################################
 
-def print_stability_status(hop):
+def print_stability_status(hop, theta=0., use_local_biases=True):
     """
     Prints the stability status of each stored memory in the Hopfield network.
     Parameters:
     hop : (HopfieldNetwork) An instance of the Hopfield network.
     """
-    stability = hop.check_stability()
+    stability = hop.check_stability(theta=theta, use_local_biases=use_local_biases)
     for label, margin in stability.items():
         status = "Stable" if margin >= 0 else "Unstable"
         print(f"Pattern {label}: {status} (margin = {margin:.6f})")

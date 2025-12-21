@@ -19,6 +19,12 @@ class HopfieldNetwork:
         self.memories = np.empty((0, n_neurons), dtype=int)
         # Optional labels for stored patterns (aligned with memories rows)
         self.memory_labels = np.empty((0,), dtype=object)
+        # Local biases
+        self.theta_loc = np.zeros(n_neurons)
+        # Parameters to calculate local biases
+        self.beta = 0.5
+        self.eps = 1e-3
+        self.theta_clip = 3.0
 
     def reset_network(self):
         """
@@ -29,6 +35,8 @@ class HopfieldNetwork:
         self.memory_labels = np.empty((0,), dtype=object)
         # Reset weight matrix
         self.W = np.zeros((self.n_neurons, self.n_neurons))
+        # Reset local biases
+        self.theta_loc = np.zeros(self.n_neurons)
         
     def num_memories(self):
         """
@@ -58,7 +66,7 @@ class HopfieldNetwork:
             raise ValueError("patterns must be {+1, -1}")
         num_new = patterns.shape[0]
 
-        # Append new labels if provided
+        # Prepare labels
         if labels is None:
             label_arr = np.array([None] * num_new, dtype=object)
         else:
@@ -68,11 +76,16 @@ class HopfieldNetwork:
 
         # Store new memories
         if self.memories.size == 0:
-            self.memories = patterns.copy()
-            self.memory_labels = label_arr.copy()
+            # No previous memories are stored
+            self.memories = patterns.copy()        # Store new patterns
+            self.memory_labels = label_arr.copy()  # Store corresponding labels
         else:
-            self.memories = np.vstack([self.memories, patterns])
-            self.memory_labels = np.hstack([self.memory_labels, label_arr])
+            # Append to existing memories
+            self.memories = np.vstack([self.memories, patterns])             # Append new patterns
+            self.memory_labels = np.hstack([self.memory_labels, label_arr])  # Append new labels
+            
+        # Recompute local biases
+        self._update_theta_loc()
 
         # Update weights according to chosen learning method
         method = self.learning_method
@@ -98,9 +111,27 @@ class HopfieldNetwork:
         else:
             raise ValueError(f"Unknown learning_method '{method}'. Use 'hebbian', 'centered', 'damped', or 'storkey'.")
         
+    def _update_theta_loc(self):
+        """
+        Update local biases to be the pixel-wise mean of stored memories.
+        If no memories are stored, biases are zero.
+        """
+        # Parameters for local bias calculation
+        beta       = self.beta
+        eps        = self.eps
+        theta_clip = self.theta_clip
+        
+        if self.memories.size == 0:
+            self.theta_loc = np.zeros(self.n_neurons)
+        else:
+            m = self.memories.mean(axis=0)                         # calculate mean
+            m = np.clip(m, -1 + eps, 1 - eps)                      # avoid atanh blow-up
+            b = -beta * np.arctanh(m)                              # external field
+            self.theta_loc = np.clip(b, -theta_clip, theta_clip)   # optional safety cap
+        
     def _hebbian(self, patterns):
         """
-        Train using Hebbian learning on the provided patterns matrix.
+        Incremental Hebbian learning for the provided patterns.
         Assumes inputs were validated in `memorize`.
         """
         self.W += patterns.T @ patterns / self.n_neurons
@@ -108,11 +139,14 @@ class HopfieldNetwork:
         
     def _storkey(self, patterns):
         """
-        Incremental Storkey learning update for a single pattern.
+        Incremental Storkey learning update for provided patterns.
         """
         for p in patterns:
+            # Local fields excluding the ij contribution for each pair
             h = self.W @ p
-            delta = (np.outer(p, p) - np.outer(p, h) - np.outer(h, p)) / self.n_neurons
+            h_minus_j = h[:, None] - self.W * p               # h_i - w_ij * p_j
+            h_minus_i = h[None, :] - (self.W.T * p[:, None])  # h_j - w_ji * p_i
+            delta = (np.outer(p, p) - p[:, None] * h_minus_i - h_minus_j * p[None, :]) / self.n_neurons
             self.W += delta
         np.fill_diagonal(self.W, 0)
         
@@ -147,21 +181,24 @@ class HopfieldNetwork:
         if zero_diagonal:
             np.fill_diagonal(self.W, 0)
 
-    def retrieve(self, pattern, max_iterations=50, history=False, update_rule="async"):
+    def retrieve(self, pattern, theta=0., max_iterations=50, history=False, update_rule="async", use_local_biases=True):
         """
         Retrieve a stored pattern starting from an initial state.
         pattern: 1D numpy array of shape (n_neurons,) with values {+1, -1}.
+        theta: uniform bias term added to each neuron's potential.
         max_iterations: maximum number of asynchronous update cycles.
         history: if True, return update history. For async, logs per-neuron updates; for
                  sync, logs iteration-level energy only.
         update_rule: 'async' (default) or 'sync' for asynchronous vs synchronous updates.
+        use_local_biases: include neuron-specific biases (theta_loc) if True.
         """
         # Validate pattern
         if pattern.shape != (self.n_neurons,) or not np.isin(pattern, (-1, 1)).all():
             raise ValueError("pattern must be a {+1, -1} vector with shape (n_neurons,)")
         if update_rule not in {"async", "sync"}:
             raise ValueError("update_rule must be 'async' or 'sync'")
-        
+                
+        # Initialize state
         state = pattern.copy()
         
         # Initialize tracking lists
@@ -174,7 +211,7 @@ class HopfieldNetwork:
                     'value': [],
                     'energy': []
                 }
-                E0 = self.energy(state)
+                E0 = self.energy(state, theta, use_local_biases=use_local_biases)
                 for i in range(self.n_neurons):
                     history['iteration'].append(0)     # Iteration number
                     history['neuron'].append(i)        # Neuron index
@@ -184,7 +221,7 @@ class HopfieldNetwork:
                 # History for synchronous updates: keep iteration-level energy only
                 history = {
                     'iteration': [0],
-                    'energy': [self.energy(state)]
+                    'energy': [self.energy(state, theta, use_local_biases=use_local_biases)]
                 }
         
         for iter in range(1, max_iterations+1):
@@ -196,7 +233,8 @@ class HopfieldNetwork:
 
                 for i in indices:
                     # Calculate internal potential of neuron
-                    xi = np.dot(self.W[i, :], state)
+                    bias_i = self.theta_loc[i] if use_local_biases else 0.0
+                    xi = np.dot(self.W[i, :], state) - theta - bias_i
                     if xi != 0:
                         new_state = 1 if xi > 0 else -1
                         if new_state != state[i]:
@@ -207,16 +245,17 @@ class HopfieldNetwork:
                         history['iteration'].append(iter)
                         history['neuron'].append(i)
                         history['value'].append(state[i])
-                        history['energy'].append(self.energy(state))
+                        history['energy'].append(self.energy(state, theta, use_local_biases=use_local_biases))
             else:
                 # Synchronous update: compute all neuron updates from current state
-                potentials = self.W @ state
+                theta_term = self.theta_loc if use_local_biases else 0.0
+                potentials = self.W @ state - theta - theta_term
                 new_state = np.where(potentials > 0, 1, np.where(potentials < 0, -1, state))
                 changed = not np.array_equal(new_state, state)
                 state = new_state
                 if history:
                     history['iteration'].append(iter)
-                    history['energy'].append(self.energy(state))
+                    history['energy'].append(self.energy(state, theta, use_local_biases=use_local_biases))
         
             # If no changes occurred during the iteration, the dynamics have converged
             if not changed:
@@ -229,12 +268,15 @@ class HopfieldNetwork:
         else:
             return state
 
-    def energy(self, state):
+    def energy(self, state, theta=0., use_local_biases=True):
         """
         Compute the Hopfield energy of a given state using:
-            E(s) = -1/2 * s^T * W * s
+            E(s) = -1/2 * s^T * W * s + theta * sum(s) + theta_loc dot s
+        where s is the state vector, W is the weight matrix, theta is the uniform bias,
+        and theta_loc are neuron-specific biases.
         """
-        return -.5 * np.dot(state, self.W.dot(state))
+        theta_term = np.dot(self.theta_loc, state) if use_local_biases else 0.0
+        return -.5 * np.dot(state, self.W.dot(state)) + theta * np.sum(state) + theta_term
 
     def weights(self):
         """
@@ -242,7 +284,7 @@ class HopfieldNetwork:
         """
         return self.W
     
-    def check_stability(self):
+    def check_stability(self, theta=0., use_local_biases=True):
         """
         Compute margin for each stored pattern.
         Returns a dict mapping label -> margin (None used if label missing).
@@ -256,9 +298,10 @@ class HopfieldNetwork:
             labels = np.resize(labels, (self.memories.shape[0],))
 
         result = {}
+        theta_term = self.theta_loc if use_local_biases else 0.0
         for p, label in zip(self.memories, labels):
             h = self.W @ p
-            margin = (p * h).min()
+            margin = (p * (h - theta - theta_term)).min()
             result[label] = margin
         return result
 
