@@ -143,11 +143,8 @@ class HopfieldNetwork:
         Incremental Storkey learning update for provided patterns.
         """
         for p in patterns:
-            # Local fields excluding the ij contribution for each pair
             h = self.W @ p
-            h_minus_j = h[:, None] - self.W * p               # h_i - w_ij * p_j
-            h_minus_i = h[None, :] - (self.W.T * p[:, None])  # h_j - w_ji * p_i
-            delta = (np.outer(p, p) - p[:, None] * h_minus_i - h_minus_j * p[None, :]) / self.n_neurons
+            delta = (np.outer(p, p) - np.outer(p, h) - np.outer(h, p)) / self.n_neurons
             self.W += delta
         self.W = 0.5 * (self.W + self.W.T)  # Ensure symmetry of weights
         np.fill_diagonal(self.W, 0)         # Zero out self-connections
