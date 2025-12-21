@@ -135,7 +135,8 @@ class HopfieldNetwork:
         Assumes inputs were validated in `memorize`.
         """
         self.W += patterns.T @ patterns / self.n_neurons
-        np.fill_diagonal(self.W, 0)
+        self.W = 0.5 * (self.W + self.W.T)  # Ensure symmetry of weights
+        np.fill_diagonal(self.W, 0)         # Zero out self-connections
         
     def _storkey(self, patterns):
         """
@@ -148,7 +149,8 @@ class HopfieldNetwork:
             h_minus_i = h[None, :] - (self.W.T * p[:, None])  # h_j - w_ji * p_i
             delta = (np.outer(p, p) - p[:, None] * h_minus_i - h_minus_j * p[None, :]) / self.n_neurons
             self.W += delta
-        np.fill_diagonal(self.W, 0)
+        self.W = 0.5 * (self.W + self.W.T)  # Ensure symmetry of weights
+        np.fill_diagonal(self.W, 0)         # Zero out self-connections
         
     def _pseudoinverse_centered(self):
         """
@@ -181,7 +183,10 @@ class HopfieldNetwork:
         if zero_diagonal:
             np.fill_diagonal(self.W, 0)
 
-    def retrieve(self, pattern, theta=0., max_iterations=50, history=False, update_rule="async", use_local_biases=True):
+    def retrieve(self, pattern, theta=0., max_iterations=50, 
+                 history=False, update_rule="async", use_local_biases=False, random_state=None,
+                 verbose=False
+                ):
         """
         Retrieve a stored pattern starting from an initial state.
         pattern: 1D numpy array of shape (n_neurons,) with values {+1, -1}.
@@ -191,6 +196,7 @@ class HopfieldNetwork:
                  sync, logs iteration-level energy only.
         update_rule: 'async' (default) or 'sync' for asynchronous vs synchronous updates.
         use_local_biases: include neuron-specific biases (theta_loc) if True.
+        random_state: seed for random number generator (for async updates).
         """
         # Validate pattern
         if pattern.shape != (self.n_neurons,) or not np.isin(pattern, (-1, 1)).all():
@@ -229,6 +235,11 @@ class HopfieldNetwork:
             if update_rule == "async":
                 # Asynchronous update: pick neurons in random order
                 indices = np.arange(self.n_neurons)
+                if random_state is None:
+                    np.random.shuffle(indices)
+                else:
+                    rng = np.random.default_rng(random_state)
+                    rng.shuffle(indices)
                 np.random.shuffle(indices)
 
                 for i in indices:
@@ -259,7 +270,8 @@ class HopfieldNetwork:
         
             # If no changes occurred during the iteration, the dynamics have converged
             if not changed:
-                print(f"Converged after {iter:d} iterations.")
+                if verbose:
+                    print(f"Converged after {iter:d} iterations.")
                 break
 
         # Return final state and retrieval history if requested
@@ -268,7 +280,7 @@ class HopfieldNetwork:
         else:
             return state
 
-    def energy(self, state, theta=0., use_local_biases=True):
+    def energy(self, state, theta=0., use_local_biases=False):
         """
         Compute the Hopfield energy of a given state using:
             E(s) = -1/2 * s^T * W * s + theta * sum(s) + theta_loc dot s
@@ -284,7 +296,7 @@ class HopfieldNetwork:
         """
         return self.W
     
-    def check_stability(self, theta=0., use_local_biases=True):
+    def check_stability(self, theta=0., use_local_biases=False):
         """
         Compute margin for each stored pattern.
         Returns a dict mapping label -> margin (None used if label missing).
