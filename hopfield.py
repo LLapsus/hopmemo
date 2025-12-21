@@ -127,56 +127,76 @@ class HopfieldNetwork:
         if zero_diagonal:
             np.fill_diagonal(self.W, 0)
 
-    def retrieve(self, pattern, max_iterations=50, history=False):
+    def retrieve(self, pattern, max_iterations=50, history=False, update_rule="async"):
         """
         Retrieve a stored pattern starting from an initial state.
         pattern: 1D numpy array of shape (n_neurons,) with values {+1, -1}.
         max_iterations: maximum number of asynchronous update cycles.
-        history: if True, return detailed update history.
+        history: if True, return update history. For async, logs per-neuron updates; for
+                 sync, logs iteration-level energy only.
+        update_rule: 'async' (default) or 'sync' for asynchronous vs synchronous updates.
         """
         # Validate pattern
         if pattern.shape != (self.n_neurons,) or not np.isin(pattern, (-1, 1)).all():
             raise ValueError("pattern must be a {+1, -1} vector with shape (n_neurons,)")
+        if update_rule not in {"async", "sync"}:
+            raise ValueError("update_rule must be 'async' or 'sync'")
         
         state = pattern.copy()
         
         # Initialize tracking lists
         if history:
-            history = {
-                'iteration': [],
-                'neuron': [],
-                'value': [],
-                'energy': []
-            }
-            E0 = self.energy(state)
-            for i in range(self.n_neurons):
-                history['iteration'].append(0)     # Iteration number
-                history['neuron'].append(i)        # Neuron index
-                history['value'].append(state[i])  # Value of the neuron
-                history['energy'].append(E0)       # Energy of the network
+            if update_rule == "async":
+                # History for asynchronous updates: keep all per-neuron updates
+                history = {
+                    'iteration': [],
+                    'neuron': [],
+                    'value': [],
+                    'energy': []
+                }
+                E0 = self.energy(state)
+                for i in range(self.n_neurons):
+                    history['iteration'].append(0)     # Iteration number
+                    history['neuron'].append(i)        # Neuron index
+                    history['value'].append(state[i])  # Value of the neuron
+                    history['energy'].append(E0)       # Energy of the network
+            else:
+                # History for synchronous updates: keep iteration-level energy only
+                history = {
+                    'iteration': [0],
+                    'energy': [self.energy(state)]
+                }
         
-        # List of neuron indices for asynchronous updates
-        indices = np.arange(self.n_neurons)
-
         for iter in range(1, max_iterations+1):
-            # Asynchronous update: pick neurons in random order
-            np.random.shuffle(indices)
-
             changed = False
-            for i in indices:
-                # Calculate internal potetial of neuron
-                xi = np.dot(self.W[i, :], state)
-                if xi != 0:
-                    new_state = 1 if xi > 0 else -1
-                    if new_state != state[i]:
-                        state[i] =  new_state
-                        changed = True
-                # Record the update
+            if update_rule == "async":
+                # Asynchronous update: pick neurons in random order
+                indices = np.arange(self.n_neurons)
+                np.random.shuffle(indices)
+
+                for i in indices:
+                    # Calculate internal potential of neuron
+                    xi = np.dot(self.W[i, :], state)
+                    if xi != 0:
+                        new_state = 1 if xi > 0 else -1
+                        if new_state != state[i]:
+                            state[i] = new_state
+                            changed = True
+                    # Record the update
+                    if history:
+                        history['iteration'].append(iter)
+                        history['neuron'].append(i)
+                        history['value'].append(state[i])
+                        history['energy'].append(self.energy(state))
+            else:
+                # Synchronous update: compute all neuron updates from current state
+                potentials = self.W @ state
+                new_state = np.where(potentials > 0, 1, np.where(potentials < 0, -1, state))
+                changed = not np.array_equal(new_state, state)
+                state = new_state
                 if history:
                     history['iteration'].append(iter)
-                    history['neuron'].append(i)
-                    history['value'].append(state[i])
-                    history['energy'].append(self.energy(state))  
+                    history['energy'].append(self.energy(state))
         
             # If no changes occurred during the iteration, the dynamics have converged
             if not changed:
