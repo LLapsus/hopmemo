@@ -8,7 +8,7 @@ class HopfieldNetwork:
     def __init__(self, n_neurons=64, learning_method="hebbian", damped_lam=0.1, damped_centered=True, damped_zero_diagonal=False):
         # Number of neurons in the network
         self.n_neurons = n_neurons
-        # Learning strategy for memorize: "hebbian", "storkey", "centered", or "damped"
+        # Learning strategy for memorize: "hebbian", "storkey", "pinv_centered", or "pinv_damped"
         self.learning_method = learning_method            # Method for weight update
         self.damped_lam = damped_lam                      # Damping factor for damped pseudoinverse
         self.damped_centered = damped_centered            # Centering option for damped pseudoinverse
@@ -47,10 +47,10 @@ class HopfieldNetwork:
     def memorize(self, patterns, labels=None):
         """
         Store patterns and update weights according to `learning_method`.
-        - hebbian: incremental Hebbian update (adds outer products of new patterns).
-        - storkey: incremental Storkey update for each new pattern.
-        - centered: recompute weights via centered pseudoinverse on all memories.
-        - damped: recompute weights via damped pseudoinverse on all memories.
+        - hebbian: recompute Hebbian weights from all stored memories.
+        - storkey: recompute Storkey weights from all stored memories.
+        - pinv_centered: recompute weights via centered pseudoinverse on all memories.
+        - pinv_damped: recompute weights via damped pseudoinverse on all memories.
         Can be called repeatedly; new patterns are appended to `self.memories`.
 
         patterns: array-like of shape (num_patterns, n_neurons) or iterable of
@@ -89,27 +89,35 @@ class HopfieldNetwork:
 
         # Update weights according to chosen learning method
         method = self.learning_method
-        num_total = self.memories.shape[0]
-        if method == "hebbian" or (num_total < 2 and method in {"centered", "damped"}):
-            # Print note if falling back to Hebbian
-            if method != "hebbian":
-                print("Note: Only one pattern stored; falling back to Hebbian update.")
+        num_memories = self.memories.shape[0]
+        if method == "hebbian":
             # Hebbian: recompute weights from stored memories.
-            self._hebbian(patterns)
+            self._hebbian()
         elif method == "storkey":
-            self._storkey(patterns)
-        elif method == "centered":
-            # Centered pseudoinverse
-            self._pseudoinverse_centered()
-        elif method == "damped":
-            # Damped pseudoinverse
-            self._pseudoinverse_damped(
-                lam=self.damped_lam,
-                centered=self.damped_centered,
-                zero_diagonal=self.damped_zero_diagonal,
-            )
+            self._storkey()
+        elif method == "pinv_centered":
+            if num_memories < 2:
+                # If total number of memories < 2, fall back to Hebbian
+                print("Note: Only one pattern stored; falling back to Hebbian update.")
+                self._hebbian()
+            else:
+                # Centered pseudoinverse
+                self._pseudoinverse_centered()
+        elif method == "pinv_damped":
+            if num_memories < 2:
+                # If total number of memories < 2, fall back to Hebbian
+                print("Note: Only one pattern stored; falling back to Hebbian update.")
+                self._hebbian()
+            else:
+                # Damped pseudoinverse
+                self._pseudoinverse_damped(
+                    lam=self.damped_lam,
+                    centered=self.damped_centered,
+                    zero_diagonal=self.damped_zero_diagonal,
+                )
         else:
-            raise ValueError(f"Unknown learning_method '{method}'. Use 'hebbian', 'centered', 'damped', or 'storkey'.")
+            # Invalid learning method
+            raise ValueError(f"Unknown learning_method '{method}'. Use 'hebbian', 'storkey', 'pinv_centered', or 'pinv_damped'.")
         
     def _update_theta_loc(self):
         """
@@ -129,20 +137,31 @@ class HopfieldNetwork:
             b = -beta * np.arctanh(m)                              # external field
             self.theta_loc = np.clip(b, -theta_clip, theta_clip)   # optional safety cap
         
-    def _hebbian(self, patterns):
+    def _hebbian(self, center=True):
         """
-        Incremental Hebbian learning for the provided patterns.
-        Assumes inputs were validated in `memorize`.
+        Hebbian learning recomputed from all stored memories.
+        If `center` is True, subtract the mean of each neuron before training.
         """
-        self.W += patterns.T @ patterns / self.n_neurons
+        if self.memories.size == 0:
+            self.W = np.zeros((self.n_neurons, self.n_neurons))
+            return
+
+        patterns = self.memories.astype(float)
+        X = patterns - patterns.mean(axis=0, keepdims=True) if center else patterns  # Centering
+        self.W = X.T @ X / self.n_neurons   # Hebbian weight update
         self.W = 0.5 * (self.W + self.W.T)  # Ensure symmetry of weights
         np.fill_diagonal(self.W, 0)         # Zero out self-connections
         
-    def _storkey(self, patterns):
+    def _storkey(self):
         """
-        Incremental Storkey learning update for provided patterns.
+        Storkey learning recomputed from all stored memories.
         """
-        for p in patterns:
+        if self.memories.size == 0:
+            self.W = np.zeros((self.n_neurons, self.n_neurons))
+            return
+
+        self.W = np.zeros((self.n_neurons, self.n_neurons))
+        for p in self.memories:
             h = self.W @ p
             delta = (np.outer(p, p) - np.outer(p, h) - np.outer(h, p)) / self.n_neurons
             self.W += delta
@@ -154,7 +173,7 @@ class HopfieldNetwork:
         Train using centered pseudoinverse learning on all stored memories.
         Assumes inputs were validated in `memorize`.
         """
-        patterns = self.memories
+        patterns = self.memories.astype(float)
         P = patterns.T  # shape (n_neurons, num_patterns)
         mean = P.mean(axis=1, keepdims=True)
         centered = P - mean
@@ -168,7 +187,7 @@ class HopfieldNetwork:
         centered: subtract pixel-wise mean before computing weights.
         zero_diagonal: if True, zero out the diagonal after training.
         """
-        patterns = self.memories
+        patterns = self.memories.astype(float)
         if lam < 0:
             raise ValueError("lam must be non-negative")
 
@@ -293,6 +312,14 @@ class HopfieldNetwork:
         """
         return self.W
     
+    def biases(self):
+        """
+        Return the current local biases of the Hopfield network.
+        """
+        return self.theta_loc
+    
+    #-------------------------------- Stability Checking -------------------------------
+    
     def check_stability(self, theta=0., use_local_biases=False):
         """
         Compute margin for each stored pattern.
@@ -313,6 +340,77 @@ class HopfieldNetwork:
             margin = (p * (h - theta - theta_term)).min()
             result[label] = margin
         return result
+    
+    #-------------------------------- Similarity Measures -------------------------------
+
+    def _hamming_distance(self, pattern1, pattern2):
+        """
+        Compute the Hamming distance between two patterns.
+        Both patterns must be {+1, -1} vectors of shape (n_neurons,).
+        Returns the number of differing bits.
+        """
+        # Ensure inputs are integers
+        pattern1 = np.asarray(pattern1, dtype=int)  # First pattern
+        pattern2 = np.asarray(pattern2, dtype=int)  # Second pattern
+        # Validate shapes
+        if pattern1.shape != (self.n_neurons,) or pattern2.shape != (self.n_neurons,):
+            raise ValueError("Both patterns must have shape (n_neurons,)")
+        # Validate values
+        if not (np.isin(pattern1, (-1, 1)).all() and np.isin(pattern2, (-1, 1)).all()):
+            raise ValueError("Both patterns must be {+1, -1} vectors")
+        # Compute and return Hamming distance
+        return np.sum(pattern1 != pattern2)
+    
+    def _overlap(self, pattern1, pattern2):
+        """
+        Compute the overlap (dot product) between two patterns.
+        Both patterns must be {+1, -1} vectors of shape (n_neurons,).
+        Returns the dot product value.
+        """
+        # Ensure inputs are integers
+        pattern1 = np.asarray(pattern1, dtype=int)  # First pattern
+        pattern2 = np.asarray(pattern2, dtype=int)  # Second pattern
+        # Validate shapes
+        if pattern1.shape != (self.n_neurons,) or pattern2.shape != (self.n_neurons,):
+            raise ValueError("Both patterns must have shape (n_neurons,)")
+        # Validate values
+        if not (np.isin(pattern1, (-1, 1)).all() and np.isin(pattern2, (-1, 1)).all()):
+            raise ValueError("Both patterns must be {+1, -1} vectors")
+        # Compute and return overlap (dot product)
+        return np.dot(pattern1, pattern2)
+    
+    def overlap_matrix(self):
+        """
+        Compute the overlap matrix between all stored memories.
+        Returns a 2D numpy array of shape (num_memories, num_memories)
+        where entry (i, j) is the overlap between memory i and memory j.
+        """
+        # Handle case with no stored memories
+        if self.memories.size == 0:
+            return np.empty((0, 0), dtype=int)
+        # Initialize overlap matrix
+        num_memories = self.memories.shape[0]
+        overlap_mat = np.zeros((num_memories, num_memories), dtype=int)
+        # Compute overlaps
+        for i in range(num_memories):
+            for j in range(num_memories):
+                overlap_mat[i, j] = self._overlap(self.memories[i], self.memories[j])
+        # Return the overlap matrix
+        return overlap_mat // self.n_neurons  # Normalize by number of neurons
+    
+    def max_offdiagonal_overlap(self):
+        """
+        Compute the maximum off-diagonal overlap between stored memories.
+        Returns the highest overlap value found between any two distinct memories.
+        If fewer than 2 memories are stored, returns None.
+        """
+        if self.memories.shape[0] < 2:
+            return None  # Not enough memories to compare
+        overlap_mat = self.overlap_matrix()
+        # Mask diagonal entries to ignore self-overlaps
+        np.fill_diagonal(overlap_mat, -np.inf)
+        # Return the maximum off-diagonal overlap
+        return float(np.max(np.abs(overlap_mat)))
 
     def nearest_memory(self, pattern, metric="hamming"):
         """
@@ -341,8 +439,18 @@ class HopfieldNetwork:
             best_idx = int(np.argmax(scores))
         else:
             raise ValueError("metric must be 'hamming' or 'overlap'")
-
-        best_mem = self.memories[best_idx]
+        # Return best matching memory, its label, and the score
+        best_mem   = self.memories[best_idx]
         best_label = labels[best_idx]
         best_score = scores[best_idx]
         return best_mem, best_label, best_score
+    
+    def mean_memory(self):
+        """
+        Compute the mean pattern of all stored memories.
+        Returns a float array of shape (n_neurons,) with values in [-1, 1].
+        If no memories are stored, returns an array of zeros.
+        """
+        if self.memories.size == 0:
+            return np.zeros(self.n_neurons, dtype=float)
+        return self.memories.mean(axis=0)

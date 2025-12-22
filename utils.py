@@ -8,6 +8,44 @@ from hopfield import HopfieldNetwork
 # Hopfield Utility Functions
 ##################################################
 
+#------------------------------------------------
+# Pattern Comparison Functions
+#------------------------------------------------
+
+def hamming_distance(pat1, pat2):
+    """
+    Computes the Hamming distance between two binary patterns.
+    Parameters:
+    pat1 : (np.ndarray) First binary pattern.
+    pat2 : (np.ndarray) Second binary pattern.
+    Returns:
+    (int) The Hamming distance between the two patterns.
+    """
+    # Ensure patterns have the same shape
+    if pat1.shape != pat2.shape:
+        raise ValueError("Patterns must have the same shape")
+    # Compute Hamming distance
+    return np.sum(pat1 != pat2)
+
+def overlap(pat1, pat2):
+    """
+    Computes the overlap between two binary patterns.
+    Parameters:
+    pat1 : (np.ndarray) First binary pattern.
+    pat2 : (np.ndarray) Second binary pattern.
+    Returns:
+    (float) The overlap between the two patterns.
+    """
+    # Ensure patterns have the same shape
+    if pat1.shape != pat2.shape:
+        raise ValueError("Patterns must have the same shape")
+    # Compute overlap
+    return np.sum(pat1 * pat2) / pat1.size
+
+#------------------------------------------------
+# Stability Checking Functions
+#------------------------------------------------
+
 def print_stability_status(hop, theta=0., use_local_biases=True):
     """
     Prints the stability status of each stored memory in the Hopfield network.
@@ -18,6 +56,10 @@ def print_stability_status(hop, theta=0., use_local_biases=True):
     for label, margin in stability.items():
         status = "Stable" if margin >= 0 else "Unstable"
         print(f"Pattern {label}: {status} (margin = {margin:.6f})")
+        
+#------------------------------------------------
+# Visualization Functions
+#------------------------------------------------
 
 def compare_patterns(inp, out):
     """
@@ -82,6 +124,10 @@ def plot_weight_matrix(hop):
     ax.set_xticks([])
     ax.set_yticks([])
     plt.show()
+    
+#------------------------------------------------
+# Pattern Manipulation Functions
+#------------------------------------------------
     
 def add_noise(pattern, p=0.1):
     """
