@@ -5,7 +5,7 @@ import numpy as np
 ##################################################
 
 class HopfieldNetwork:
-    def __init__(self, n_neurons=64, learning_method="hebbian", damped_lam=0.1, damped_centered=True, damped_zero_diagonal=False):
+    def __init__(self, n_neurons=64, learning_method="hebbian", damped_lam=0.1, damped_centered=True, damped_zero_diagonal=True):
         # Number of neurons in the network
         self.n_neurons = n_neurons
         # Learning strategy for memorize: "hebbian", "storkey", "pinv_centered", or "pinv_damped"
@@ -113,7 +113,6 @@ class HopfieldNetwork:
                 self._pseudoinverse_damped(
                     lam=self.damped_lam,
                     centered=self.damped_centered,
-                    zero_diagonal=self.damped_zero_diagonal,
                 )
         else:
             # Invalid learning method
@@ -180,12 +179,11 @@ class HopfieldNetwork:
         self.W = centered @ np.linalg.pinv(centered.T @ centered) @ centered.T
         np.fill_diagonal(self.W, 0)
 
-    def _pseudoinverse_damped(self, lam=0.1, centered=True, zero_diagonal=False):
+    def _pseudoinverse_damped(self, lam=0.1, centered=True):
         """
         Train using a damped pseudoinverse on all stored memories.
         lam: Tikhonov damping parameter (>= 0).
         centered: subtract pixel-wise mean before computing weights.
-        zero_diagonal: if True, zero out the diagonal after training.
         """
         patterns = self.memories.astype(float)
         if lam < 0:
@@ -195,9 +193,8 @@ class HopfieldNetwork:
         X = P - P.mean(axis=1, keepdims=True) if centered else P
         gram = X.T @ X
         gram_damped = gram + lam * np.eye(gram.shape[0])
-        self.W = X @ np.linalg.inv(gram_damped) @ X.T
-        if zero_diagonal:
-            np.fill_diagonal(self.W, 0)
+        self.W = X @ np.linalg.solve(gram_damped, X.T)
+        np.fill_diagonal(self.W, 0)
 
     def retrieve(self, pattern, theta=0., max_iterations=50, 
                  history=False, update_rule="async", use_local_biases=False, random_state=None,
@@ -215,6 +212,7 @@ class HopfieldNetwork:
         random_state: seed for random number generator (for async updates).
         """
         # Validate pattern
+        pattern = np.asarray(pattern, dtype=int)
         if pattern.shape != (self.n_neurons,) or not np.isin(pattern, (-1, 1)).all():
             raise ValueError("pattern must be a {+1, -1} vector with shape (n_neurons,)")
         if update_rule not in {"async", "sync"}:
@@ -224,10 +222,12 @@ class HopfieldNetwork:
         state = pattern.copy()
         
         # Initialize tracking lists
-        if history:
+        track_history = bool(history)
+        history_data = None
+        if track_history:
             if update_rule == "async":
                 # History for asynchronous updates: keep all per-neuron updates
-                history = {
+                history_data = {
                     'iteration': [],
                     'neuron': [],
                     'value': [],
@@ -235,26 +235,26 @@ class HopfieldNetwork:
                 }
                 E0 = self.energy(state, theta, use_local_biases=use_local_biases)
                 for i in range(self.n_neurons):
-                    history['iteration'].append(0)     # Iteration number
-                    history['neuron'].append(i)        # Neuron index
-                    history['value'].append(state[i])  # Value of the neuron
-                    history['energy'].append(E0)       # Energy of the network
+                    history_data['iteration'].append(0)     # Iteration number
+                    history_data['neuron'].append(i)        # Neuron index
+                    history_data['value'].append(state[i])  # Value of the neuron
+                    history_data['energy'].append(E0)       # Energy of the network
             else:
                 # History for synchronous updates: keep iteration-level energy only
-                history = {
+                history_data = {
                     'iteration': [0],
                     'energy': [self.energy(state, theta, use_local_biases=use_local_biases)]
                 }
         
-        for iter in range(1, max_iterations+1):
+        rng = np.random.default_rng(random_state) if random_state is not None else None
+        for iteration in range(1, max_iterations + 1):
             changed = False
             if update_rule == "async":
                 # Asynchronous update: pick neurons in random order
                 indices = np.arange(self.n_neurons)
-                if random_state is None:
+                if rng is None:
                     np.random.shuffle(indices)
                 else:
-                    rng = np.random.default_rng(random_state)
                     rng.shuffle(indices)
 
                 for i in indices:
@@ -267,11 +267,11 @@ class HopfieldNetwork:
                             state[i] = new_state
                             changed = True
                     # Record the update
-                    if history:
-                        history['iteration'].append(iter)
-                        history['neuron'].append(i)
-                        history['value'].append(state[i])
-                        history['energy'].append(self.energy(state, theta, use_local_biases=use_local_biases))
+                    if track_history:
+                        history_data['iteration'].append(iteration)
+                        history_data['neuron'].append(i)
+                        history_data['value'].append(state[i])
+                        history_data['energy'].append(self.energy(state, theta, use_local_biases=use_local_biases))
             else:
                 # Synchronous update: compute all neuron updates from current state
                 theta_term = self.theta_loc if use_local_biases else 0.0
@@ -279,21 +279,18 @@ class HopfieldNetwork:
                 new_state = np.where(potentials > 0, 1, np.where(potentials < 0, -1, state))
                 changed = not np.array_equal(new_state, state)
                 state = new_state
-                if history:
-                    history['iteration'].append(iter)
-                    history['energy'].append(self.energy(state, theta, use_local_biases=use_local_biases))
+                if track_history:
+                    history_data['iteration'].append(iteration)
+                    history_data['energy'].append(self.energy(state, theta, use_local_biases=use_local_biases))
         
             # If no changes occurred during the iteration, the dynamics have converged
             if not changed:
                 if verbose:
-                    print(f"Converged after {iter:d} iterations.")
+                    print(f"Converged after {iteration:d} iterations.")
                 break
 
         # Return final state and retrieval history if requested
-        if history:
-            return state, history
-        else:
-            return state
+        return (state, history_data) if track_history else state
 
     def energy(self, state, theta=0., use_local_biases=False):
         """
@@ -329,7 +326,7 @@ class HopfieldNetwork:
 
         labels = self.memory_labels
         if labels.shape[0] != self.memories.shape[0]:
-            # Defensive: align length if somehow mismatched
+            # Check align length if somehow mismatched
             labels = np.resize(labels, (self.memories.shape[0],))
 
         result = {}
@@ -403,13 +400,19 @@ class HopfieldNetwork:
         Returns the highest overlap value found between any two distinct memories.
         If fewer than 2 memories are stored, returns None.
         """
-        if self.memories.shape[0] < 2:
-            return None  # Not enough memories to compare
-        overlap_mat = self.overlap_matrix()
+        # Get the overlap matrix
+        C = self.overlap_matrix()
+        if C.shape[0] == 0:
+            # No memories stored
+            return None  
+        m = C.shape[0]
+        if m < 2:
+            # Only one memory stored
+            return float(C[0, 0]) 
         # Mask diagonal entries to ignore self-overlaps
-        np.fill_diagonal(overlap_mat, -np.inf)
+        mask = ~np.eye(m, dtype=bool)
         # Return the maximum off-diagonal overlap
-        return float(np.max(np.abs(overlap_mat)))
+        return float(np.max(np.abs(C[mask])))
 
     def nearest_memory(self, pattern, metric="hamming"):
         """
