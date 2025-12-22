@@ -146,7 +146,11 @@ class HopfieldNetwork:
             return
 
         patterns = self.memories.astype(float)
-        X = patterns - patterns.mean(axis=0, keepdims=True) if center else patterns  # Centering
+        # For a single pattern, centering would zero out the data; skip centering in that case.
+        if center and patterns.shape[0] > 1:
+            X = patterns - patterns.mean(axis=0, keepdims=True)
+        else:
+            X = patterns
         self.W = X.T @ X / self.n_neurons   # Hebbian weight update
         self.W = 0.5 * (self.W + self.W.T)  # Ensure symmetry of weights
         np.fill_diagonal(self.W, 0)         # Zero out self-connections

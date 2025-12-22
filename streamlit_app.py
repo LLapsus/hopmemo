@@ -65,15 +65,15 @@ def _plot_heatmap(img2d: np.ndarray, *, title: str, cmap: str = "gray", vmin=Non
     st.pyplot(fig, clear_figure=True)
 
 
-st.set_page_config(page_title="Hopfield (alnum) – Streamlit", layout="wide")
+st.set_page_config(page_title="Hopfield - Streamlit", layout="wide")
 _init_state()
 
-st.title("Hopfieldova sieť – interaktívne učenie na alnum dataset-e")
+st.title("Hopfieldova síť - Asociativní paměť")
 
 with st.sidebar:
     st.header("Dataset")
-    letters = st.toggle("Písmená (A–Z)", value=True)
-    digits = st.toggle("Číslice (0–9)", value=True)
+    letters = st.toggle("Písmená (A-Z)", value=True)
+    digits = st.toggle("Číslice (0-9)", value=True)
     if not (letters or digits):
         st.warning("Zapni aspoň jednu skupinu (písmená alebo číslice).")
 
@@ -120,7 +120,7 @@ pool_indices = st.session_state.pool_indices
 X_pool = X_all[pool_indices]
 y_pool = y_all[pool_indices]
 
-colA, colB = st.columns([1.2, 1.0], gap="large")
+colA, colB = st.columns([1.0, 1.0], gap="large")
 
 with colA:
     st.subheader("Aktuálny vzor")
@@ -143,11 +143,11 @@ with colA:
 
     label = str(y_pool[st.session_state.pool_pos])
     p = X_pool[st.session_state.pool_pos].astype(int)
-    _plot_heatmap(_pattern_to_image(p), title=f"Vzory: {label}", cmap="gray", vmin=0.0, vmax=1.0)
+    _plot_heatmap(_pattern_to_image(p), title=f"Vzor: {label}", cmap="gray", vmin=0.0, vmax=1.0)
 
     c1, c2, c3 = st.columns([1, 1, 1])
     with c1:
-        if st.button("Memorize (pridať)", type="primary", use_container_width=True):
+        if st.button("Zapamatuj", type="primary", use_container_width=True):
             prev_W = st.session_state.hop.W.copy()
             st.session_state.stored_patterns.append(p.copy())
             st.session_state.stored_labels.append(label)
@@ -178,39 +178,14 @@ with colA:
     st.caption(f"Uložené vzory: {st.session_state.hop.num_memories()}")
 
 with colB:
-    st.subheader("Sledovanie váh")
-    if st.session_state.hop.num_memories() == 0:
-        st.info("Najprv pridaj aspoň jeden vzor (Memorize).")
-    else:
-        W_now = st.session_state.hop.W
-        W_prev = st.session_state.last_W
-        delta_norm = float(np.linalg.norm(W_now - W_prev)) if isinstance(W_prev, np.ndarray) else float("nan")
-        st.write(
-            {
-                "min": float(W_now.min()),
-                "max": float(W_now.max()),
-                "mean": float(W_now.mean()),
-                "fro_norm": float(np.linalg.norm(W_now)),
-                "delta_fro_norm": delta_norm,
-            }
-        )
-
-        st.markdown("**Receptívne pole neurónu** (riadok `W[i, :]` ako 28×28)")
-        r = st.slider("row", 0, H - 1, 14)
-        c = st.slider("col", 0, W - 1, 14)
-        i = int(r * W + c)
-
-        field = W_now[i, :].reshape(H, W)
-        m = float(np.max(np.abs(field))) or 1.0
-        _plot_heatmap(field, title=f"W[{r},{c}] (aktuálne)", cmap="RdBu_r", vmin=-m, vmax=m)
-
-        if isinstance(W_prev, np.ndarray):
-            dfield = (W_now[i, :] - W_prev[i, :]).reshape(H, W)
-            dm = float(np.max(np.abs(dfield))) or 1.0
-            _plot_heatmap(dfield, title=f"ΔW[{r},{c}] (posledný krok)", cmap="RdBu_r", vmin=-dm, vmax=dm)
+    st.subheader("Váhy")
+    W_now = st.session_state.hop.W
+    st.markdown("**Matica váh W** (784x784)")
+    m = float(np.max(np.abs(W_now))) or 1.0
+    _plot_heatmap(W_now, title="W (aktuálne)", cmap="RdBu_r", vmin=-m, vmax=m)
 
 st.divider()
-st.subheader("Retrieval (rekonštrukcia)")
+st.subheader("Rekonštrukcia")
 
 if st.session_state.hop.num_memories() == 0:
     st.info("Najprv ulož nejaké vzory (Memorize), potom má retrieval zmysel.")
@@ -244,4 +219,3 @@ else:
         st.caption(f"Najbližšia uložená pamäť (hamming): {best_label} (distance={int(best_score)})")
     except Exception:
         pass
-
