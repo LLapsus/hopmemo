@@ -256,7 +256,6 @@ class HopfieldNetwork:
                 else:
                     rng = np.random.default_rng(random_state)
                     rng.shuffle(indices)
-                np.random.shuffle(indices)
 
                 for i in indices:
                     # Calculate internal potential of neuron
@@ -396,7 +395,7 @@ class HopfieldNetwork:
             for j in range(num_memories):
                 overlap_mat[i, j] = self._overlap(self.memories[i], self.memories[j])
         # Return the overlap matrix
-        return overlap_mat // self.n_neurons  # Normalize by number of neurons
+        return overlap_mat / self.n_neurons  # Normalize by number of neurons
     
     def max_offdiagonal_overlap(self):
         """
