@@ -4,6 +4,10 @@ import streamlit as st
 from alnum_dataset import generate_alnum_dataset
 from hopfield import HopfieldNetwork
 
+import matplotlib.pyplot as plt
+from matplotlib.colors import TwoSlopeNorm
+import seaborn as sns
+
 
 H = W = 28
 N_NEURONS = H * W
@@ -54,29 +58,49 @@ def _make_pool_indices(labels: np.ndarray, pool_size: int, seed: int) -> np.ndar
     return rng.choice(labels.shape[0], size=pool_size, replace=False)
 
 
-def _plot_heatmap(img2d: np.ndarray, *, title: str, cmap: str = "gray", vmin=None, vmax=None):
-    import matplotlib.pyplot as plt
-
-    fig, ax = plt.subplots(figsize=(3, 3), dpi=140)
-    ax.imshow(img2d, cmap=cmap, vmin=vmin, vmax=vmax, interpolation="nearest")
+def _plot_pattern(pattern: np.ndarray, *, title: str, fs=2):
+    """Plot binary pattern."""
+    
+    # Reshape pattern to 2D image
+    img = pattern.reshape(H, W).astype(np.float32)
+    
+    # Set colormap
+    cmap = sns.color_palette(["#e9e9cd", "#f7f7f7", "#08009c"], as_cmap=True)
+    m = max(abs(np.nanmin(img)), abs(np.nanmax(img)))  # keep symmetric scale
+    norm = TwoSlopeNorm(vcenter=0.0, vmin=-m, vmax=m)
+    
+    # Plot pattern
+    fig, ax = plt.subplots(figsize=(fs, fs), dpi=140)
+    sns.heatmap(img, cmap=cmap, cbar=False, 
+                norm=norm, vmin=-1, vmax=1, ax=ax)
     ax.set_title(title)
     ax.set_xticks([])
     ax.set_yticks([])
     st.pyplot(fig, clear_figure=True)
 
 
-st.set_page_config(page_title="Hopfield - Streamlit", layout="wide")
+def _plot_heatmap(img2d: np.ndarray, *, title: str, cmap: str = "viridis", vmin=None, vmax=None):
+    """Helpers to plot a heatmap."""
+
+    fig, ax = plt.subplots(figsize=(3, 3), dpi=140)
+    sns.heatmap(img2d, ax=ax, cmap=cmap, cbar=True, vmin=vmin, vmax=vmax)
+    ax.set_title(title, size=12)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    st.pyplot(fig, clear_figure=True)
+
+#------------------------------------------------------------------------------
+# Streamlit app
+#------------------------------------------------------------------------------
+
+st.set_page_config(page_title="Hopmemo - Streamlit", layout="wide")
 _init_state()
 
-st.title("Hopfieldova síť - Asociativní paměť")
+st.title("Hopmemo - Hopfieldova síť")
+
+#--- Sidebar config ---
 
 with st.sidebar:
-    st.header("Dataset")
-    letters = st.toggle("Písmená (A-Z)", value=True)
-    digits = st.toggle("Číslice (0-9)", value=True)
-    if not (letters or digits):
-        st.warning("Zapni aspoň jednu skupinu (písmená alebo číslice).")
-
     st.header("Výber vzorov")
     pool_size = st.slider("Veľkosť výberu", min_value=1, max_value=36, value=10, step=1)
     rng_seed = st.number_input("Seed", min_value=0, max_value=10_000, value=int(st.session_state.rng_seed), step=1)
@@ -108,7 +132,7 @@ config = {
 }
 _rebuild_hop_if_needed(config)
 
-X_all, y_all = generate_alnum_dataset(letters=letters, digits=digits)
+X_all, y_all = generate_alnum_dataset()
 X_all = X_all.reshape(X_all.shape[0], -1)
 
 if st.session_state.pool_indices is None or st.button("Resamplovať výber", type="secondary"):
@@ -121,6 +145,8 @@ X_pool = X_all[pool_indices]
 y_pool = y_all[pool_indices]
 
 colA, colB = st.columns([1.0, 1.0], gap="large")
+
+# --- Current pattern and controls ---
 
 with colA:
     st.subheader("Aktuálny vzor")
@@ -143,7 +169,7 @@ with colA:
 
     label = str(y_pool[st.session_state.pool_pos])
     p = X_pool[st.session_state.pool_pos].astype(int)
-    _plot_heatmap(_pattern_to_image(p), title=f"Vzor: {label}", cmap="gray", vmin=0.0, vmax=1.0)
+    _plot_pattern(p, title=f"Vzor: {label}", fs=2)
 
     c1, c2, c3 = st.columns([1, 1, 1])
     with c1:
