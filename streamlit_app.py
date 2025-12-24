@@ -30,8 +30,8 @@ def _build_hop(config: dict) -> HopfieldNetwork:
         n_neurons=N_NEURONS,
         learning_method=config["learning_method"],
         damped_lam=config["damped_lam"],
-        damped_centered=config["damped_centered"],
-        damped_zero_diagonal=config["damped_zero_diagonal"],
+        damped_centered=True,
+        damped_zero_diagonal=True,
     )
 
 
@@ -101,21 +101,15 @@ st.title("Hopmemo - Hopfieldova síť")
 #--- Sidebar config ---
 
 with st.sidebar:
-    st.header("Výber vzorov")
-    pool_size = st.slider("Veľkosť výberu", min_value=1, max_value=36, value=10, step=1)
-    rng_seed = st.number_input("Seed", min_value=0, max_value=10_000, value=int(st.session_state.rng_seed), step=1)
-
-    st.header("Učenie (váhy)")
+    st.header("Učící algoritmus")
     learning_method = st.selectbox(
-        "Metóda",
-        ["hebbian", "storkey", "pinv_centered", "pinv_damped"],
+        "Metoda",
+        ["hebbian", "storkey", "pinv centered", "pinv damped"],
         index=["hebbian", "storkey", "pinv_centered", "pinv_damped"].index(
             st.session_state.hop_config["learning_method"] if st.session_state.hop_config else "hebbian"
         ),
     )
     damped_lam = st.slider("lambda (pinv_damped)", min_value=0.0, max_value=1.0, value=0.1, step=0.01)
-    damped_centered = st.toggle("centered (pinv_damped)", value=True)
-    damped_zero_diagonal = st.toggle("zero diagonal", value=True)
 
     st.header("Retrieval")
     theta = st.number_input("theta", value=0.0, step=0.1)
@@ -126,23 +120,21 @@ with st.sidebar:
 
 config = {
     "learning_method": learning_method,
-    "damped_lam": float(damped_lam),
-    "damped_centered": bool(damped_centered),
-    "damped_zero_diagonal": bool(damped_zero_diagonal),
+    "damped_lam": float(damped_lam)
 }
 _rebuild_hop_if_needed(config)
 
 X_all, y_all = generate_alnum_dataset()
 X_all = X_all.reshape(X_all.shape[0], -1)
 
-if st.session_state.pool_indices is None or st.button("Resamplovať výber", type="secondary"):
-    st.session_state.rng_seed = int(rng_seed)
-    st.session_state.pool_indices = _make_pool_indices(y_all, pool_size, seed=int(rng_seed))
-    st.session_state.pool_pos = 0
+# if st.session_state.pool_indices is None or st.button("Resamplovať výber", type="secondary"):
+#     st.session_state.rng_seed = int(rng_seed)
+#     st.session_state.pool_indices = _make_pool_indices(y_all, pool_size, seed=int(rng_seed))
+#     st.session_state.pool_pos = 0
 
-pool_indices = st.session_state.pool_indices
-X_pool = X_all[pool_indices]
-y_pool = y_all[pool_indices]
+# pool_indices = st.session_state.pool_indices
+X_pool = X_all
+y_pool = y_all
 
 colA, colB = st.columns([1.0, 1.0], gap="large")
 
