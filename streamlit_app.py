@@ -346,22 +346,25 @@ with colW:
 
 with colDiag:
     st.markdown("**Network load / confusion diagnostics**")
-    if not st.session_state.stored_patterns:
-        st.info("Přidej vzory, aby bylo co diagnostikovat.")
-    else:
-        diag = _compute_diagnostics_cached(st.session_state.stored_patterns, W_now)
+    diag = _compute_diagnostics_cached(st.session_state.stored_patterns, W_now) if st.session_state.stored_patterns else None
 
-        def _fmt(x):
-            return "n/a" if x is None or np.isnan(x) else f"{x:.3f}"
+    def _fmt(x):
+        if not st.session_state.stored_patterns:
+            return "---"
+        return "n/a" if x is None or np.isnan(x) else f"{x:.3f}"
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Load α = P/N", _fmt(diag["alpha"]))
-        m2.metric("corr_mean |C|", _fmt(diag["corr_mean"]))
-        m3.metric("unstable_frac", _fmt(diag["unstable_frac"]))
-        st.caption(f"corr_max |C|: {_fmt(diag['corr_max'])}")
+    P = len(st.session_state.stored_patterns)
+    N = W_now.shape[0]
+    st.markdown(f"- P (počet vzorů): {_fmt(P)}  \n- N (neurony): {_fmt(N)}")
 
-        p5, p50, p95 = diag["percentiles"]
-        st.caption(f"Margin percentiles p5/p50/p95: {_fmt(p5)} / {_fmt(p50)} / {_fmt(p95)}")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Load α = P/N", _fmt(diag["alpha"] if diag else None))
+    m2.metric("corr_mean |C|", _fmt(diag["corr_mean"] if diag else None))
+    m3.metric("unstable_frac", _fmt(diag["unstable_frac"] if diag else None))
+    st.caption(f"corr_max |C|: {_fmt(diag['corr_max'] if diag else None)}")
+
+    p5, p50, p95 = diag["percentiles"] if diag else (None, None, None)
+    st.caption(f"Margin percentiles p5/p50/p95: {_fmt(p5)} / {_fmt(p50)} / {_fmt(p95)}")
 
 # --- Retrieval ---
 
