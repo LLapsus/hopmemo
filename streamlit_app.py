@@ -130,8 +130,10 @@ def _compute_diagnostics(patterns: list[np.ndarray], W: np.ndarray) -> dict:
     P, N = X.shape[0], X.shape[1]
     X_pm = _as_pm1(X)
 
+    # Calculate load
     alpha = P / float(N)
 
+    # Calculate pairwise correlations between patterns
     if P < 2:
         corr_mean = np.nan
         corr_max = np.nan
@@ -142,6 +144,7 @@ def _compute_diagnostics(patterns: list[np.ndarray], W: np.ndarray) -> dict:
         corr_mean = float(vals.mean()) if vals.size else np.nan
         corr_max = float(vals.max()) if vals.size else np.nan
 
+    # Calculate fraction of unstable bits across all patterns and neurons
     H = X_pm @ W
     M = X_pm * H
     margins_flat = M.ravel()
@@ -321,7 +324,7 @@ st.divider()
 
 # --- Weights of the Hopfield network + diagnostics ---
 
-st.subheader("Váhy a diagnostika")
+st.subheader("Učení sítě")
 st.markdown(
     """Tady můžeš sledovat váhy Hopfieldovy sítě i rychlou diagnostiku zaplnění a stability."""
 )
@@ -336,16 +339,16 @@ W_now = st.session_state.hop.W
 colW, colDiag = st.columns([1.15, 1], gap="large")
 
 with colW:
+    st.markdown("**Matice Vah**")
     st.markdown(f"""
-                - :blue[Velikost matice vah:] {W_now.shape[0]:d} x {W_now.shape[1]:d}<br>
-                - :blue[Počet uložených vzorů:] {st.session_state.hop.num_memories()}
+                - :blue[Velikost matice vah:] {W_now.shape[0]:d} x {W_now.shape[1]:d}
                 """, unsafe_allow_html=True)
 
     m = float(np.max(np.abs(W_now))) or 1.0
     _plot_heatmap(W_now, cmap="RdBu_r", vmin=-m, vmax=m)
 
 with colDiag:
-    st.markdown("**Network load / confusion diagnostics**")
+    st.markdown("**Diagnostika**")
     diag = _compute_diagnostics_cached(st.session_state.stored_patterns, W_now) if st.session_state.stored_patterns else None
 
     def _fmt(x):
@@ -355,16 +358,15 @@ with colDiag:
 
     P = len(st.session_state.stored_patterns)
     N = W_now.shape[0]
-    st.markdown(f"- P (počet vzorů): {_fmt(P)}  \n- N (neurony): {_fmt(N)}")
-
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Load α = P/N", _fmt(diag["alpha"] if diag else None))
-    m2.metric("corr_mean |C|", _fmt(diag["corr_mean"] if diag else None))
-    m3.metric("unstable_frac", _fmt(diag["unstable_frac"] if diag else None))
-    st.caption(f"corr_max |C|: {_fmt(diag['corr_max'] if diag else None)}")
-
-    p5, p50, p95 = diag["percentiles"] if diag else (None, None, None)
-    st.caption(f"Margin percentiles p5/p50/p95: {_fmt(p5)} / {_fmt(p50)} / {_fmt(p95)}")
+    st.markdown(
+        f"- :blue[počet neuronů]<br>  N = {N:d}\n"
+        f"- :blue[počet zapamatovaných vzorů]<br>  P = {P:d}\n"
+        f"- :blue[zatížení sítě]<br> α = P/N = {_fmt(diag['alpha'] if diag else None)}\n"
+        f"- :blue[průměrná párová korelace mezi vzory]<br> E(C) = {_fmt(diag['corr_mean'] if diag else None)}\n"
+        f"- :blue[maximální párová korelace mezi vzory]<br> max(C) = {_fmt(diag['corr_max'] if diag else None)}\n"
+        f"- :blue[poměr nestabilních bitů]<br/> {_fmt(diag['unstable_frac'] if diag else None)}",
+        unsafe_allow_html=True
+    )
 
 # --- Retrieval ---
 
