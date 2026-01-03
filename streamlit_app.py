@@ -173,17 +173,6 @@ def _compute_diagnostics_cached(patterns: list[np.ndarray], W: np.ndarray) -> di
     return diag
 
 
-def _plot_margin_hist(margins_flat: np.ndarray):
-    fig, ax = plt.subplots(figsize=(3.5, 3), dpi=140)
-    ax.hist(margins_flat, bins=60, color="#4a90e2", alpha=0.85, edgecolor="white")
-    ax.axvline(0.0, color="#c62828", linestyle="--", linewidth=1)
-    ax.set_xlabel("Margin")
-    ax.set_ylabel("Frequency")
-    ax.set_title("Histogram marginů")
-    fig.tight_layout()
-    return fig
-
-
 def _plot_pattern(pattern: np.ndarray, *, title: str = "", fs=2):
     """Plot binary pattern."""
     
@@ -371,8 +360,6 @@ with colDiag:
         m3.metric("unstable_frac", _fmt(diag["unstable_frac"]))
         st.caption(f"corr_max |C|: {_fmt(diag['corr_max'])}")
 
-        fig = _plot_margin_hist(diag["margins_flat"])
-        st.pyplot(fig, clear_figure=True)
         p5, p50, p95 = diag["percentiles"]
         st.caption(f"Margin percentiles p5/p50/p95: {_fmt(p5)} / {_fmt(p50)} / {_fmt(p95)}")
 
