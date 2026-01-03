@@ -176,6 +176,29 @@ def _compute_diagnostics_cached(patterns: list[np.ndarray], W: np.ndarray) -> di
     return diag
 
 
+def _apply_transformations(pattern: np.ndarray, *, noise: float = 0.0, invert: bool = False, hide_half: bool = False, seed: int = 0) -> np.ndarray:
+    """Apply simple degradations to a pattern before retrieval."""
+    rng = np.random.default_rng(seed)
+    x = pattern.astype(float).copy()
+
+    if invert:
+        x *= -1
+
+    if hide_half:
+        n_hide = x.size // 2
+        if n_hide > 0:
+            idx_hide = rng.choice(x.size, size=n_hide, replace=False)
+            x[idx_hide] = 0  # hide information (neutral)
+
+    if noise > 0.0:
+        k = int(round(noise * x.size))
+        if k > 0:
+            idx_noise = rng.choice(x.size, size=k, replace=False)
+            x[idx_noise] *= -1
+
+    return x
+
+
 def _plot_pattern(pattern: np.ndarray, *, title: str = "", fs=2):
     """Plot binary pattern."""
     
@@ -192,11 +215,11 @@ def _plot_pattern(pattern: np.ndarray, *, title: str = "", fs=2):
     sns.heatmap(img, cmap=cmap, cbar=False, 
                 norm=norm, vmin=-1, vmax=1, ax=ax)
     if title != "":
-        ax.set_title(title)
+        ax.set_title(title, size=8)
     ax.set_xticks([])
     ax.set_yticks([])
     
-    st.pyplot(fig, clear_figure=True)
+    st.pyplot(fig, clear_figure=True, width="content")
 
 
 def _plot_heatmap(img2d: np.ndarray, *, title: str = "", cmap: str = "viridis", vmin=None, vmax=None):
@@ -234,7 +257,20 @@ st.markdown(
     /* Make primary buttons red (used for 'zapomenout') */
     button[data-testid="baseButton-primary"] {
         background-color: #c62828;
+        padding: 0.25rem 0.25rem !important;
         color: #ffffff;
+    }
+    /* Make default buttons (e.g., 'zapamatovat') more compact */
+    button[data-testid="baseButton-secondary"] {
+        padding: 0.25rem 0.25rem !important;
+        min-height: 26px !important;
+        font-size: 0.9rem !important;
+    }
+    /* Extra targeting for memorize buttons */
+    button[title="remember-btn"] {
+        padding: 0.2rem 0.35rem !important;
+        min-height: 22px !important;
+        font-size: 0.82rem !important;
     }
     /* Soft highlight for the global clear button (identified via help/title attr) */
     button[title="clear-all"] {
@@ -265,8 +301,7 @@ with st.sidebar:
     max_iter = st.number_input("max_iterations", min_value=1, max_value=200, value=50, step=1)
     update_rule = st.selectbox("update_rule", ["async", "sync"], index=0)
     use_local_biases = st.toggle("use_local_biases", value=False)
-    noise_p = st.slider("Šum p (na vstupe)", min_value=0.0, max_value=0.5, value=0.10, step=0.01)
-
+    
 config = {
     "learning_method": learning_method,
     "damped_lam": float(damped_lam)
@@ -307,7 +342,7 @@ for row in range(n_rows):
                     _remove_pattern(label)
                     st.rerun()
             else:
-                if st.button("zapamatovat", key=f"remember_{idx}", use_container_width=True):
+                if st.button("zapamatovat", key=f"remember_{idx}", use_container_width=True, type="secondary"):
                     _memorize_pattern(X_pool[idx].astype(int), label)
                     st.session_state.pool_pos = idx
                     st.rerun()
@@ -410,37 +445,71 @@ with colDiag:
 # --- Retrieval ---
 
 st.divider()
-st.subheader("Rekonštrukce vzoru")
+st.subheader("Rekonstrukce vzoru")
 
 if st.session_state.hop.num_memories() == 0:
-    st.info("Najprv pridaj vzory cez mriežku vyššie, potom má retrieval zmysel.")
+    st.info("Nejprve nauč Hopfieldovou síť několit vzorů z datasetu.")
 else:
-    rng = np.random.default_rng(0)
-    noisy = p.copy()
-    n = noisy.size
-    k = int(round(float(noise_p) * n))
-    if k > 0:
-        idx = rng.choice(n, size=k, replace=False)
-        noisy[idx] *= -1
+    st.markdown("Vyber zapamatovaný vzor, aplikuj transformace a spusti rekonstrukci.")
 
-    out = st.session_state.hop.retrieve(
-        noisy,
-        theta=float(theta),
-        max_iterations=int(max_iter),
-        update_rule=str(update_rule),
-        use_local_biases=bool(use_local_biases),
-    )
+    labels = st.session_state.stored_labels
+    options_idx = list(range(len(labels)))
+    default_idx = min(st.session_state.get("retrieval_idx", 0), len(labels) - 1)
 
-    cc1, cc2, cc3 = st.columns(3)
-    with cc1:
-        _plot_heatmap(_pattern_to_image(p), title=f"Originál: {label}", cmap="gray", vmin=0.0, vmax=1.0)
-    with cc2:
-        _plot_heatmap(_pattern_to_image(noisy), title=f"Vstup (šum p={noise_p:.2f})", cmap="gray", vmin=0.0, vmax=1.0)
-    with cc3:
-        _plot_heatmap(_pattern_to_image(out), title="Výstup (po retrieval)", cmap="gray", vmin=0.0, vmax=1.0)
+    with st.form("retrieval_form"):
+        sel_idx = st.selectbox(
+            "Vyber zapamatovaný vzor",
+            options_idx,
+            index=default_idx,
+            format_func=lambda i: f"{i}: {labels[i]}",
+        )
+        noise_val = st.slider("Šum p", min_value=0.0, max_value=0.5, value=float(noise_p), step=0.01)
+        invert_val = st.checkbox("Invertovat vstup", value=False)
+        hide_half_val = st.checkbox("Zakryt polovinu (náhodne)", value=False, help="Náhodne vynuluje polovicu pixelov.")
+        seed_val = st.number_input("Seed transformácií", value=0, step=1)
+        run_retrieval = st.form_submit_button("Spustiť rekonstrukci")
 
-    try:
-        best_mem, best_label, best_score = st.session_state.hop.nearest_memory(out, metric="hamming")
-        st.caption(f"Najbližšia uložená pamäť (hamming): {best_label} (distance={int(best_score)})")
-    except Exception:
-        pass
+    if run_retrieval:
+        st.session_state.retrieval_idx = int(sel_idx)
+        base = np.array(st.session_state.stored_patterns[sel_idx])
+        noisy = _apply_transformations(base, noise=noise_val, invert=invert_val, hide_half=hide_half_val, seed=int(seed_val))
+        out = st.session_state.hop.retrieve(
+            noisy,
+            theta=float(theta),
+            max_iterations=int(max_iter),
+            update_rule=str(update_rule),
+            use_local_biases=bool(use_local_biases),
+        )
+        st.session_state.retrieval_last = {
+            "label": labels[sel_idx],
+            "original": base,
+            "input": noisy,
+            "output": out,
+            "noise": noise_val,
+            "invert": invert_val,
+            "hide_half": hide_half_val,
+        }
+
+    last = st.session_state.get("retrieval_last")
+    if last:
+        cc1, cc2, cc3 = st.columns(3)
+        with cc1:
+            _plot_pattern(last["original"], title="Originál", fs=1.5)
+        with cc2:
+            desc_parts = [f"šum p={last['noise']:.2f}"]
+            if last["invert"]:
+                desc_parts.append("invert")
+            if last["hide_half"]:
+                desc_parts.append("half hidden")
+            desc = ", ".join(desc_parts)
+            _plot_pattern(last["input"], title=f"Vstup", fs=1.5)
+        with cc3:
+            _plot_pattern(last["output"], title="Výstup", fs=1.5)
+
+        try:
+            best_mem, best_label, best_score = st.session_state.hop.nearest_memory(last["output"], metric="hamming")
+            st.caption(f"Najbližšia uložená pamäť: {best_label}")
+        except Exception:
+            pass
+    else:
+        st.info("Vyber vzor a klikni na 'Spustit rekonstrukci'.")
