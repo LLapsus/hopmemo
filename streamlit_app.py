@@ -350,21 +350,60 @@ with colW:
 with colDiag:
     st.markdown("**Diagnostika**")
     diag = _compute_diagnostics_cached(st.session_state.stored_patterns, W_now) if st.session_state.stored_patterns else None
-
+    
+    # Formatting helper of the diagnostic values
     def _fmt(x):
         if not st.session_state.stored_patterns:
             return "---"
         return "n/a" if x is None or np.isnan(x) else f"{x:.3f}"
+    
+    alpha_indicator         = "⚪"
+    corr_mean_indicator     = "⚪"
+    corr_max_indicator      = "⚪"
+    unstable_frac_indicator = "⚪"
+    if diag:
+        # Color indicator for load
+        if _fmt(diag['alpha']) != "n/a":
+            if diag['alpha'] < 0.05:
+                alpha_indicator = "🟢"
+            elif diag['alpha'] < 0.12:
+                alpha_indicator = "🟡"
+            else:
+                alpha_indicator = "🔴"
+        # Color indicator for corr_mean
+        if _fmt(diag['corr_mean']) != "n/a":    
+            if diag['corr_mean'] < 0.1:
+                corr_mean_indicator = "🟢"
+            elif diag['corr_mean'] < 0.3:
+                corr_mean_indicator = " 🟡"
+            else:
+                corr_mean_indicator = "🔴"    
+        # Color indicator for corr_max
+        if _fmt(diag['corr_max']) != "n/a":
+            if diag['corr_max'] < 0.3:
+                corr_max_indicator = "🟢"
+            elif diag['corr_max'] < 0.6:
+                corr_max_indicator = "🟡"
+            else:
+                corr_max_indicator = "🔴"
+        # Color indicator for unstable_frac
+        if _fmt(diag['unstable_frac']) != "n/a":
+            if diag['unstable_frac'] < 0.001:
+                unstable_frac_indicator = "🟢"
+            elif diag['unstable_frac'] < 0.05:
+                unstable_frac_indicator = "🟡"
+            else:
+                unstable_frac_indicator = "🔴"
 
     P = len(st.session_state.stored_patterns)
     N = W_now.shape[0]
     st.markdown(
         f"- :blue[počet neuronů]<br>  N = {N:d}\n"
         f"- :blue[počet zapamatovaných vzorů]<br>  P = {P:d}\n"
-        f"- :blue[zatížení sítě]<br> α = P/N = {_fmt(diag['alpha'] if diag else None)}\n"
-        f"- :blue[průměrná párová korelace mezi vzory]<br> E(C) = {_fmt(diag['corr_mean'] if diag else None)}\n"
-        f"- :blue[maximální párová korelace mezi vzory]<br> max(C) = {_fmt(diag['corr_max'] if diag else None)}\n"
-        f"- :blue[poměr nestabilních bitů]<br/> {_fmt(diag['unstable_frac'] if diag else None)}",
+        f"- :blue[zatížení sítě] {alpha_indicator}<br> α = P/N = {_fmt(diag['alpha'] if diag else None)}\n"
+        f"- :blue[průměrná párová korelace mezi vzory] {corr_mean_indicator}<br> E(C) = {_fmt(diag['corr_mean'] if diag else None)}\n"
+        f"- :blue[maximální párová korelace mezi vzory] {corr_max_indicator}<br> max(C) = {_fmt(diag['corr_max'] if diag else None)}\n"
+        f"- :blue[poměr nestabilních bitů] {unstable_frac_indicator}<br/> {_fmt(diag['unstable_frac'] if diag else None)}",
         unsafe_allow_html=True
     )
 
