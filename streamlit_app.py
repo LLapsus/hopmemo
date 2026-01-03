@@ -1,3 +1,4 @@
+import hashlib
 import math
 import numpy as np
 import streamlit as st
@@ -89,6 +90,98 @@ def _remove_pattern(label: str):
     ss.stored_labels.pop(idx)
     ss.stored_patterns.pop(idx)
     _rebuild_after_edit()
+
+
+def _hash_array(arr: np.ndarray) -> str:
+    """Stable hash for caching diagnostics."""
+    a = np.asarray(arr)
+    return hashlib.md5(a.view(np.uint8)).hexdigest()
+
+
+def _as_pm1(arr: np.ndarray) -> np.ndarray:
+    """Coerce patterns to +/-1."""
+    a = np.asarray(arr)
+    if a.size == 0:
+        return a.astype(float)
+    amin, amax = a.min(), a.max()
+    if amin >= 0 and amax <= 1:
+        return (2 * a - 1).astype(float)
+    return a.astype(float)
+
+
+def _compute_diagnostics(patterns: list[np.ndarray], W: np.ndarray) -> dict:
+    """
+    Compute load, pairwise correlations, and stability margins.
+    Returns dict with alpha, corr_mean, corr_max, unstable_frac, percentiles, margins_flat.
+    """
+    if not patterns:
+        return {
+            "P": 0,
+            "N": W.shape[0],
+            "alpha": 0.0,
+            "corr_mean": np.nan,
+            "corr_max": np.nan,
+            "unstable_frac": np.nan,
+            "percentiles": (np.nan, np.nan, np.nan),
+            "margins_flat": np.array([]),
+        }
+
+    X = np.stack(patterns, axis=0)
+    P, N = X.shape[0], X.shape[1]
+    X_pm = _as_pm1(X)
+
+    alpha = P / float(N)
+
+    if P < 2:
+        corr_mean = np.nan
+        corr_max = np.nan
+    else:
+        C = (X_pm @ X_pm.T) / float(N)
+        iu = np.triu_indices(P, k=1)
+        vals = np.abs(C[iu])
+        corr_mean = float(vals.mean()) if vals.size else np.nan
+        corr_max = float(vals.max()) if vals.size else np.nan
+
+    H = X_pm @ W
+    M = X_pm * H
+    margins_flat = M.ravel()
+    unstable_frac = float((margins_flat < 0).mean()) if margins_flat.size else np.nan
+    percentiles = tuple(np.percentile(margins_flat, [5, 50, 95])) if margins_flat.size else (np.nan, np.nan, np.nan)
+
+    return {
+        "P": P,
+        "N": N,
+        "alpha": float(alpha),
+        "corr_mean": corr_mean,
+        "corr_max": corr_max,
+        "unstable_frac": unstable_frac,
+        "percentiles": percentiles,
+        "margins_flat": margins_flat,
+    }
+
+
+def _compute_diagnostics_cached(patterns: list[np.ndarray], W: np.ndarray) -> dict:
+    """Cache diagnostics based on pattern/W hashes to avoid recompute."""
+    ss = st.session_state
+    ss.setdefault("diag_cache", {})
+    pat_arr = np.stack(patterns, axis=0) if patterns else np.empty((0, N_NEURONS), dtype=float)
+    key = (_hash_array(pat_arr), _hash_array(W))
+    if key in ss.diag_cache:
+        return ss.diag_cache[key]
+    diag = _compute_diagnostics(patterns, W)
+    ss.diag_cache[key] = diag
+    return diag
+
+
+def _plot_margin_hist(margins_flat: np.ndarray):
+    fig, ax = plt.subplots(figsize=(3.5, 3), dpi=140)
+    ax.hist(margins_flat, bins=60, color="#4a90e2", alpha=0.85, edgecolor="white")
+    ax.axvline(0.0, color="#c62828", linestyle="--", linewidth=1)
+    ax.set_xlabel("Margin")
+    ax.set_ylabel("Frequency")
+    ax.set_title("Histogram marginů")
+    fig.tight_layout()
+    return fig
 
 
 def _plot_pattern(pattern: np.ndarray, *, title: str = "", fs=2):
@@ -237,11 +330,11 @@ if st.button("zapomenout všechny", type="secondary", use_container_width=True, 
 
 st.divider()
 
-# --- Weights of the Hopfield network ---
+# --- Weights of the Hopfield network + diagnostics ---
 
-st.subheader("Váhy")
+st.subheader("Váhy a diagnostika")
 st.markdown(
-    """Tady můžeš sledovat váhy Hopfieldovy sítě. V matici vah jsou zapsané všechny vzory, které si síť zapamatovala."""
+    """Tady můžeš sledovat váhy Hopfieldovy sítě i rychlou diagnostiku zaplnění a stability."""
 )
 
 pos = int(np.clip(st.session_state.pool_pos, 0, len(y_pool) - 1))
@@ -249,18 +342,39 @@ st.session_state.pool_pos = pos
 label = str(y_pool[pos])
 p = X_pool[pos].astype(int)
 
-# Current weight matrix and its max abs value
 W_now = st.session_state.hop.W
 
-# Display information
-st.markdown(f"""
-            - :blue[Velikost matice vah:] {W_now.shape[0]:d} x {W_now.shape[1]:d}<br>
-            - :blue[Počet uložených vzorů:] {st.session_state.hop.num_memories()}
-            """, unsafe_allow_html=True)
+colW, colDiag = st.columns([1.15, 1], gap="large")
 
-# Display weight matrix
-m = float(np.max(np.abs(W_now))) or 1.0
-_plot_heatmap(W_now, cmap="RdBu_r", vmin=-m, vmax=m)
+with colW:
+    st.markdown(f"""
+                - :blue[Velikost matice vah:] {W_now.shape[0]:d} x {W_now.shape[1]:d}<br>
+                - :blue[Počet uložených vzorů:] {st.session_state.hop.num_memories()}
+                """, unsafe_allow_html=True)
+
+    m = float(np.max(np.abs(W_now))) or 1.0
+    _plot_heatmap(W_now, cmap="RdBu_r", vmin=-m, vmax=m)
+
+with colDiag:
+    st.markdown("**Network load / confusion diagnostics**")
+    if not st.session_state.stored_patterns:
+        st.info("Přidej vzory, aby bylo co diagnostikovat.")
+    else:
+        diag = _compute_diagnostics_cached(st.session_state.stored_patterns, W_now)
+
+        def _fmt(x):
+            return "n/a" if x is None or np.isnan(x) else f"{x:.3f}"
+
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Load α = P/N", _fmt(diag["alpha"]))
+        m2.metric("corr_mean |C|", _fmt(diag["corr_mean"]))
+        m3.metric("unstable_frac", _fmt(diag["unstable_frac"]))
+        st.caption(f"corr_max |C|: {_fmt(diag['corr_max'])}")
+
+        fig = _plot_margin_hist(diag["margins_flat"])
+        st.pyplot(fig, clear_figure=True)
+        p5, p50, p95 = diag["percentiles"]
+        st.caption(f"Margin percentiles p5/p50/p95: {_fmt(p5)} / {_fmt(p50)} / {_fmt(p95)}")
 
 # --- Retrieval ---
 
