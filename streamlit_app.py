@@ -14,7 +14,7 @@ import seaborn as sns
 
 H = W = 28
 N_NEURONS = H * W
-THREE_CMAP = ListedColormap(["#e9e9cd", "#f7f7f7", "#08009c"])
+THREE_CMAP = ListedColormap(["#E5D2AC", "#f7f7f7", "#3362C8"])
 CACHE_VERSION = "pattern_cmap_v3"
 
 
@@ -217,7 +217,6 @@ def _cached_pattern_png(pattern_bytes: bytes, *, title: str = "", fs: int = 2):
     return buf.getvalue()
 
 
-
 @st.cache_data
 def _weight_matrix_png(W_bytes: bytes, n: int, *, title: str, cmap: str, vmin: float, vmax: float, fs: int):
     W = np.frombuffer(W_bytes, dtype=np.float32).reshape(n, n)
@@ -252,24 +251,28 @@ st.title("Hopmemo - Hopfieldova síť")
 st.markdown(
     """
     <style>
+    /* reduce padding of the button */
+    div[data-testid="stButton"] > button {
+        padding: 0.1rem 0.35rem !important;
+        border-radius: 0.2rem !important;
+        min-height: 1.4rem !important;
+        height: 1.4rem !important;
+        font-size: 0.75rem !important;
+        line-height: 1 !important;
+    }
+
+    /* reduce space arround margin */
+    div[data-testid="stButton"] {
+        margin-top: 0rem !important;
+        margin-bottom: 0rem !important;
+    }
+    
     /* Make primary buttons red (used for 'zapomenout') */
-    button[data-testid="baseButton-primary"] {
-        background-color: #c62828;
-        padding: 0.25rem 0.25rem !important;
-        color: #ffffff;
+    button[data-testid="stButton-primary"] {
+        background-color: #c62828 !important;
+        color: #ffffff !important;
     }
-    /* Make default buttons (e.g., 'zapamatovat') more compact */
-    button[data-testid="baseButton-secondary"] {
-        padding: 0.25rem 0.25rem !important;
-        min-height: 26px !important;
-        font-size: 0.9rem !important;
-    }
-    /* Extra targeting for memorize buttons */
-    button[title="remember-btn"] {
-        padding: 0.2rem 0.35rem !important;
-        min-height: 22px !important;
-        font-size: 0.82rem !important;
-    }
+        
     /* Soft highlight for the global clear button (identified via help/title attr) */
     button[title="clear-all"] {
         background-color: #fff9c4 !important;
@@ -278,8 +281,32 @@ st.markdown(
     }
     </style>
     """,
-    unsafe_allow_html=True,
-)
+    unsafe_allow_html=True)
+
+# Info box style
+st.markdown(
+    """
+    <style>
+    .info-box {
+        background-color: #e8f4fd;
+        padding: 0.75rem;
+        border-radius: 0.2rem;
+        border-left: 6px solid #1f77b4;
+        margin: 0.5rem 0;
+        font-size: 0.9rem;
+    }
+    .info-box a {
+        color: #1f77b4;
+        text-decoration: none;
+        font-weight: 500;
+    }
+    .info-box a:hover {
+        text-decoration: underline;
+    }
+    </style>
+    """, 
+    unsafe_allow_html=True)
+
 
 #--- Sidebar config ---
 
@@ -343,12 +370,32 @@ X_all = X_all.reshape(X_all.shape[0], -1)
 X_pool = X_all
 y_pool = y_all
 
+# --- Introduction ---
+
+st.markdown(
+    """
+    <div>
+    <a href="https://en.wikipedia.org/wiki/Hopfield_network">Hopfieldova síť</a> je jednoduchý typ neuronové sítě, který funguje jako
+    <em>asociativní paměť</em> - dokáže si zapamatovat vzory a znovu je vybavit i z neúplného
+    nebo poškozeného vstupu. Tato aplikace slouží k tomu, aby názorně ukázala,
+    <strong>jak se Hopfieldova síť učí a kde jsou její limity</strong>.
+    Můžete zde porovnávat různé učící algoritmy a nastavení a sledovat,
+    jak ovlivňují stabilitu uložených vzorů, kapacitu paměti
+    i vznik chyb a záměn.
+    </div>
+    """,
+    unsafe_allow_html=True)
+
 # --- Dataset grid ---
 
 st.subheader("Dataset")
 st.markdown(
-    """Klikni na tlačidlo pod obrázkem; Hopfieldova síť si tento vzor zapamatuje tak, že si ho zapíše do svých vah."""
-)
+    """
+    <div class="info-box">
+    Klikni na tlačidlo pod obrázkem; Hopfieldova síť si tento vzor zapamatuje tak, že si ho zapíše do svých vah.
+    </div><br/>
+    """,
+    unsafe_allow_html=True)
 
 n_cols = 8
 n_rows = int(math.ceil(len(y_pool) / n_cols))
@@ -380,7 +427,8 @@ for row in range(n_rows):
                     st.rerun()
 
 # Clear all memories
-if st.button("zapomenout všechny", type="secondary", use_container_width=True, help="clear-all"):
+if st.button("zapomenout všechny", use_container_width=True, 
+             help="Vymaže všechny dosud zapamatované vzory a resetuje síť."):
     st.session_state.stored_patterns = []
     st.session_state.stored_labels = []
     st.session_state.hop.reset_network()
@@ -491,7 +539,14 @@ st.divider()
 st.subheader("Rekonstrukce vzoru")
 
 if st.session_state.hop.num_memories() == 0:
-    st.info("Nejprve nauč Hopfieldovou síť několit vzorů z datasetu.")
+    # st.info("Nejprve nauč Hopfieldovou síť několit vzorů z datasetu.")
+    st.markdown(
+    """
+    <div class="info-box">
+    Nejprve nauč Hopfieldovou síť několit vzorů z <a href="#dataset">datasetu</a>.
+    </div>
+    """,
+    unsafe_allow_html=True)
 else:
     st.markdown("Vyber zapamatovaný vzor, aplikuj transformace a spusti rekonstrukci.")
 
