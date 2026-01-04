@@ -1,4 +1,5 @@
 import hashlib
+import io
 import math
 import numpy as np
 import streamlit as st
@@ -7,12 +8,14 @@ from alnum_dataset import generate_alnum_dataset
 from hopfield import HopfieldNetwork
 
 import matplotlib.pyplot as plt
-from matplotlib.colors import TwoSlopeNorm
+from matplotlib.colors import TwoSlopeNorm, ListedColormap
 import seaborn as sns
 
 
 H = W = 28
 N_NEURONS = H * W
+THREE_CMAP = ListedColormap(["#e9e9cd", "#f7f7f7", "#08009c"])
+CACHE_VERSION = "pattern_cmap_v3"
 
 
 def _init_state():
@@ -193,77 +196,48 @@ def _apply_transformations(pattern: np.ndarray, *, noise: float = 0.0, invert: b
     return x
 
 
-def _plot_pattern(pattern: np.ndarray, *, title: str = "", fs=2):
-    """Plot binary pattern."""
+@st.cache_data
+def _cached_pattern_png(pattern_bytes: bytes, *, title: str = "", fs: int = 2):
+    pattern = np.frombuffer(pattern_bytes, dtype=np.int8)
+    img = pattern.reshape(H, W)
     
-    # Reshape pattern to 2D image
-    img = pattern.reshape(H, W).astype(np.float32)
-    
-    # Set colormap
-    cmap = sns.color_palette(["#e9e9cd", "#f7f7f7", "#08009c"], as_cmap=True)
-    m = max(abs(np.nanmin(img)), abs(np.nanmax(img)))  # keep symmetric scale
-    norm = TwoSlopeNorm(vcenter=0.0, vmin=-m, vmax=m)
-    
-    # Plot pattern
-    fig, ax = plt.subplots(figsize=(fs, fs), dpi=140)
-    sns.heatmap(img, cmap=cmap, cbar=False, square=True,
-                norm=norm, vmin=-1, vmax=1, ax=ax)
-    if title != "":
-        ax.set_title(title, size=8)
-    ax.set_xticks([])
-    ax.set_yticks([])
-    
-    st.pyplot(fig, clear_figure=True, width="content")
-
-
-def _plot_heatmap(img2d: np.ndarray, *, title: str = "", cmap: str = "viridis", vmin=None, vmax=None):
-    """Helpers to plot a heatmap."""
-
-    fig, ax = plt.subplots(figsize=(3, 3), dpi=140)
-    sns.heatmap(img2d, ax=ax, cmap=cmap, cbar=True, 
-                vmin=vmin, vmax=vmax, square=True, 
-                cbar_kws={"shrink": 0.8})
-    # Set colorbar
-    cbar = ax.collections[0].colorbar
-    cbar.ax.tick_params(labelsize=6)
-    # Remove ticks
-    ax.set_xticks([])
-    ax.set_yticks([])
-    # Set title
-    if title != "":
-        ax.set_title(title)
-    
-    st.pyplot(fig, clear_figure=True, width="content")
-
-
-def render_pattern_fig(pattern: np.ndarray, *, title: str = "", fs=2):
-    img = pattern.reshape(H, W).astype(np.float32)
-
-    m = max(abs(img.min()), abs(img.max()))
+    m = max(abs(img.min()), abs(img.max())) # keep symmetric scale
     norm = TwoSlopeNorm(vcenter=0.0, vmin=-m, vmax=m)
 
     fig, ax = plt.subplots(figsize=(fs, fs), dpi=140)
-    ax.imshow(
-        img,
-        cmap=plt.cm.coolwarm,   # alebo vlastná cmap
-        norm=norm,
-        interpolation="nearest",
-    )
-    ax.set_xticks([])
-    ax.set_yticks([])
-
-    if title:
+    ax.imshow(img, cmap=THREE_CMAP, norm=norm, interpolation="nearest", aspect="equal")
+    ax.axis("off")
+    
+    if title != "":
         ax.set_title(title, fontsize=8)
 
-    fig.tight_layout(pad=0.2)
-    return fig
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", pad_inches=0)
+    plt.close(fig)
+    return buf.getvalue()
+
 
 
 @st.cache_data
-def cached_pattern_fig(pattern_bytes: bytes, title: str, fs: int):
-    pattern = np.frombuffer(pattern_bytes, dtype=np.int8)
-    return render_pattern_fig(pattern, title=title, fs=fs)
+def _weight_matrix_png(W_bytes: bytes, n: int, *, title: str, cmap: str, vmin: float, vmax: float, fs: int):
+    W = np.frombuffer(W_bytes, dtype=np.float32).reshape(n, n)
 
+    fig, ax = plt.subplots(figsize=(fs, fs), dpi=140)
+    im = ax.imshow(W, cmap=cmap, vmin=vmin, vmax=vmax, interpolation="nearest")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    if title:
+        ax.set_title(title, fontsize=9)
+
+    cbar = fig.colorbar(im, ax=ax, shrink=0.8)
+    cbar.ax.tick_params(labelsize=6)
+
+    fig.tight_layout(pad=0.2)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", pad_inches=0)
+    plt.close(fig)
+    return buf.getvalue()
 
 #------------------------------------------------------------------------------
 # Streamlit app
@@ -381,17 +355,20 @@ n_rows = int(math.ceil(len(y_pool) / n_cols))
 for row in range(n_rows):
     cols = st.columns(n_cols, gap="small")
     for c_idx in range(n_cols):
+        # Compute index of the pattern in the pool
         idx = row * n_cols + c_idx
         if idx >= len(y_pool):
             continue
 
         label = str(y_pool[idx])
-        img = _pattern_to_image(X_pool[idx])
         is_memorized = label in st.session_state.stored_labels
 
         with cols[c_idx]:
-            # st.image(img, use_container_width=True, caption=label)
-            _plot_pattern(X_pool[idx], title=label, fs=1.5)
+            # pattern in bytes for caching
+            pattern_bytes = X_pool[idx].astype(np.int8).tobytes()
+            # display pattern image
+            png = _cached_pattern_png(pattern_bytes, title=label, fs=2)
+            st.image(png)
             if is_memorized:
                 if st.button("zapomenout", key=f"remove_{idx}", use_container_width=True, type="primary"):
                     _remove_pattern(label)
@@ -434,8 +411,14 @@ with colW:
                 - :blue[Velikost matice vah:] {W_now.shape[0]:d} x {W_now.shape[1]:d}
                 """, unsafe_allow_html=True)
 
+    # Plot weight matrix heatmap
     m = float(np.max(np.abs(W_now))) or 1.0
-    _plot_heatmap(W_now, cmap="RdBu_r", vmin=-m, vmax=m)
+    png = _weight_matrix_png(
+        W_now.astype(np.float32).tobytes(),
+        W_now.shape[0], title="", cmap="RdBu_r",
+        vmin=-m, vmax=m, fs=3
+    )
+    st.image(png)
 
 with colDiag:
     st.markdown("**Diagnostika**")
@@ -520,7 +503,7 @@ else:
         "Vyber zapamatovaný vzor",
         options_idx,
         index=default_idx,
-        format_func=lambda i: f"{i}: {labels[i]}",
+        format_func=lambda i: f"vzor {labels[i]}",
         key="retrieval_selectbox",
     )
     noise_val = st.slider("Šum p", min_value=0.0, max_value=0.5, value=0.1, step=0.01, key="retrieval_noise")
@@ -572,18 +555,15 @@ else:
 
     c1, c2, c3 = st.columns(3)
     with c1:
-        _plot_pattern(base, title="Originál", fs=1.5)
+        png = _cached_pattern_png(base.astype(np.int8).tobytes(), title="originál", fs=2)
+        st.image(png)
     with c2:
-        desc_parts = [f"šum p={noise_val:.2f}"]
-        if invert_val:
-            desc_parts.append("invert")
-        if hide_half_val:
-            desc_parts.append("half hidden")
-        desc = ", ".join(desc_parts)
-        _plot_pattern(noisy, title="Vstup", fs=1.5)
+        png = _cached_pattern_png(noisy.astype(np.int8).tobytes(), title="vstup", fs=2)
+        st.image(png)
     with c3:
         if last:
-            _plot_pattern(last["output"], title="Výstup", fs=1.5)
+            png = _cached_pattern_png(last["output"].astype(np.int8).tobytes(), title="výstup", fs=2)
+            st.image(png)
             try:
                 best_mem, best_label, best_score = st.session_state.hop.nearest_memory(last["output"], metric="hamming")
                 st.caption(f"Nejbližší uložená vzpomínka: {best_label}")
