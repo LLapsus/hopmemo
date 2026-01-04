@@ -307,6 +307,15 @@ st.markdown(
     """, 
     unsafe_allow_html=True)
 
+# Small caption style
+st.markdown(
+"""
+<style>
+.small-caption { font-size: 0.75rem; margin-top: -0.4rem; }
+</style>
+""", 
+unsafe_allow_html=True)
+
 
 #--- Sidebar config ---
 
@@ -411,10 +420,11 @@ for row in range(n_rows):
         is_memorized = label in st.session_state.stored_labels
 
         with cols[c_idx]:
-            # pattern in bytes for caching
-            pattern_bytes = X_pool[idx].astype(np.int8).tobytes()
             # display pattern image
-            png = _cached_pattern_png(pattern_bytes, title=label, fs=2)
+            st.markdown(
+                f"""<div class="small-caption">vzor {label}</div>""", 
+                unsafe_allow_html=True)
+            png = _cached_pattern_png(X_pool[idx].astype(np.int8).tobytes())
             st.image(png, use_container_width=True)
             if is_memorized:
                 if st.button("zapomenout", key=f"remove_{idx}", use_container_width=True, type="primary"):
@@ -610,14 +620,17 @@ else:
 
     c1, c2, c3 = st.columns(3)
     with c1:
-        png = _cached_pattern_png(base.astype(np.int8).tobytes(), title="originál", fs=2)
+        st.markdown("**originál**")
+        png = _cached_pattern_png(base.astype(np.int8).tobytes())
         st.image(png, use_container_width=True)
     with c2:
-        png = _cached_pattern_png(noisy.astype(np.int8).tobytes(), title="vstup", fs=2)
+        st.markdown("**vstup**")
+        png = _cached_pattern_png(noisy.astype(np.int8).tobytes())
         st.image(png, use_container_width=True)
     with c3:
         if last:
-            png = _cached_pattern_png(last["output"].astype(np.int8).tobytes(), title="výstup", fs=2)
+            st.markdown("**výstup**")
+            png = _cached_pattern_png(last["output"].astype(np.int8).tobytes())
             st.image(png, use_container_width=True)
             try:
                 best_mem, best_label, best_score = st.session_state.hop.nearest_memory(last["output"], metric="hamming")
