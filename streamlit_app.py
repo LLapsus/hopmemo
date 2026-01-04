@@ -415,7 +415,7 @@ for row in range(n_rows):
             pattern_bytes = X_pool[idx].astype(np.int8).tobytes()
             # display pattern image
             png = _cached_pattern_png(pattern_bytes, title=label, fs=2)
-            st.image(png)
+            st.image(png, use_container_width=True)
             if is_memorized:
                 if st.button("zapomenout", key=f"remove_{idx}", use_container_width=True, type="primary"):
                     _remove_pattern(label)
@@ -466,7 +466,7 @@ with colW:
         W_now.shape[0], title="", cmap="RdBu_r",
         vmin=-m, vmax=m, fs=3
     )
-    st.image(png)
+    st.image(png, use_container_width=True)
 
 with colDiag:
     st.markdown("**Diagnostika**")
@@ -611,14 +611,14 @@ else:
     c1, c2, c3 = st.columns(3)
     with c1:
         png = _cached_pattern_png(base.astype(np.int8).tobytes(), title="originál", fs=2)
-        st.image(png)
+        st.image(png, use_container_width=True)
     with c2:
         png = _cached_pattern_png(noisy.astype(np.int8).tobytes(), title="vstup", fs=2)
-        st.image(png)
+        st.image(png, use_container_width=True)
     with c3:
         if last:
             png = _cached_pattern_png(last["output"].astype(np.int8).tobytes(), title="výstup", fs=2)
-            st.image(png)
+            st.image(png, use_container_width=True)
             try:
                 best_mem, best_label, best_score = st.session_state.hop.nearest_memory(last["output"], metric="hamming")
                 st.caption(f"Nejbližší uložená vzpomínka: {best_label}")
