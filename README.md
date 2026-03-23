@@ -48,7 +48,7 @@ No extra dependencies needed — Tkinter is part of the Python standard library.
 
 ## Interactive Apps
 
-### Streamlit App (`streamlit_app.py`)
+### Streamlit App ([streamlit_app.py](streamlit_app.py))
 
 The web app uses the alphanumeric dataset (A–Z and 0–9, rendered as 28×28 binary images). From the UI you can:
 
@@ -58,7 +58,7 @@ The web app uses the alphanumeric dataset (A–Z and 0–9, rendered as 28×28 b
 - View **diagnostics**: network load (α = P/N), pairwise pattern correlations, and stability status
 - Select a stored pattern, apply **noise or inversion**, and run retrieval to see the input → output comparison
 
-### Tkinter App (`tk_app.py`)
+### Tkinter App ([apps/tk_app.py](apps/tk_app.py))
 
 A lightweight desktop GUI for hands-on experimentation:
 
@@ -189,7 +189,6 @@ hopmemo/
 │   ├── icons.py               # Procedural icon patterns
 │   └── openml.py              # MNIST / Fashion-MNIST / Kuzushiji loader
 ├── apps/                      # Interactive frontends
-│   ├── streamlit_app.py       # Web app (Streamlit) — also mirrored at root
 │   └── tk_app.py              # Desktop GUI (Tkinter)
 ├── notebooks/                 # Demo notebooks
 │   ├── hopfield_demo.ipynb
