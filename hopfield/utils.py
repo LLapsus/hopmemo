@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from hopfield import HopfieldNetwork
+from hopfield.network import HopfieldNetwork
 
 ##################################################
 # Hopfield Utility Functions

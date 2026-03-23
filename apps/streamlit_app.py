@@ -4,7 +4,7 @@ import math
 import numpy as np
 import streamlit as st
 
-from alnum_dataset import generate_alnum_dataset
+from datasets.alnum import generate_alnum_dataset
 from hopfield import HopfieldNetwork
 
 import matplotlib.pyplot as plt

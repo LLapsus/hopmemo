@@ -29,18 +29,18 @@ A Hopfield Network is a fully-connected recurrent neural network that can memori
 ```bash
 git clone https://github.com/your-username/hopfield-app.git
 cd hopfield-app
-pip install -r requirements.txt
+pip install -r requirements-app.txt
 ```
 
 **Streamlit web app:**
 ```bash
-streamlit run streamlit_app.py
+streamlit run apps/streamlit_app.py
 ```
 Then open [http://localhost:8501](http://localhost:8501) in your browser.
 
 **Tkinter desktop app:**
 ```bash
-python tk_app.py
+python apps/tk_app.py
 ```
 No extra dependencies needed — Tkinter is part of the Python standard library.
 
@@ -143,9 +143,9 @@ HopfieldNetwork(
 ### Datasets
 
 ```python
-from alnum_dataset import generate_alnum_dataset
-from icon_dataset import generate_icons
-from openml_datasets import ImageDataset28
+from datasets.alnum import generate_alnum_dataset
+from datasets.icons import generate_icons
+from datasets.openml import ImageDataset28
 
 # Alphanumeric: 36 patterns of shape (28, 28) with values in {-1, +1}
 X, y = generate_alnum_dataset()          # X: (36, 28, 28), y: labels
@@ -161,7 +161,7 @@ X, y = ds.subset(n=100, flatten=True)   # X: (100, 784), values in {-1, +1}
 ### Utilities
 
 ```python
-from utils import add_noise, hide_pattern, compare_patterns, plot_energy
+from hopfield.utils import add_noise, hide_pattern, compare_patterns, plot_energy
 
 noisy  = add_noise(pattern, p=0.15)      # Flip 15% of bits randomly
 hidden = hide_pattern(pattern)           # Set the bottom half to zero
@@ -180,30 +180,37 @@ plot_energy(history)
 
 ```
 hopfield_app/
-├── hopfield.py          # Core HopfieldNetwork class
-├── streamlit_app.py     # Interactive web app (Streamlit)
-├── tk_app.py            # Desktop GUI (Tkinter)
-├── alnum_dataset.py     # Alphanumeric pattern generator (A–Z, 0–9)
-├── icon_dataset.py      # Procedural icon pattern generator
-├── openml_datasets.py   # Loader for MNIST / Fashion-MNIST / Kuzushiji
-├── utils.py             # Noise, distance, and visualization helpers
-└── requirements.txt     # Python dependencies
+├── hopfield/                  # Core library (importable package)
+│   ├── __init__.py
+│   ├── network.py             # HopfieldNetwork class
+│   └── utils.py               # Noise, distance, and visualization helpers
+├── datasets/                  # Pattern generators
+│   ├── alnum.py               # Alphanumeric patterns (A–Z, 0–9)
+│   ├── icons.py               # Procedural icon patterns
+│   └── openml.py              # MNIST / Fashion-MNIST / Kuzushiji loader
+├── apps/                      # Interactive frontends
+│   ├── streamlit_app.py       # Web app (Streamlit)
+│   └── tk_app.py              # Desktop GUI (Tkinter)
+├── notebooks/                 # Demo notebooks
+│   ├── hopfield_demo.ipynb
+│   ├── alnum_dataset_demo.ipynb
+│   ├── icon_dataset_demo.ipynb
+│   └── openml_datasets_demo.ipynb
+├── requirements.txt           # Core dependency (numpy)
+├── requirements-app.txt       # Full dependencies for running the apps
+└── README.md
 ```
 
 ---
 
 ## Dependencies
 
-```
-streamlit
-numpy
-matplotlib
-seaborn
-scikit-learn
-pandas
-```
-
-Install with:
+**Core library only** (just `HopfieldNetwork` + datasets):
 ```bash
 pip install -r requirements.txt
+```
+
+**Full install** (includes Streamlit app and visualization):
+```bash
+pip install -r requirements-app.txt
 ```
