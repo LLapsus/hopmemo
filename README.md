@@ -27,14 +27,14 @@ A Hopfield Network is a fully-connected recurrent neural network that can memori
 **Requirements:** Python 3.8+
 
 ```bash
-git clone https://github.com/your-username/hopfield-app.git
-cd hopfield-app
-pip install -r requirements-app.txt
+git clone https://github.com/LLapsus/hopmemo.git
+cd hopmemo
+pip install -r requirements.txt
 ```
 
 **Streamlit web app:**
 ```bash
-streamlit run apps/streamlit_app.py
+streamlit run streamlit_app.py
 ```
 Then open [http://localhost:8501](http://localhost:8501) in your browser.
 
@@ -71,7 +71,7 @@ A lightweight desktop GUI for hands-on experimentation:
 
 ## Python API
 
-The core class is `HopfieldNetwork` in [hopfield.py](hopfield.py).
+The core class is `HopfieldNetwork` in [hopfield/network.py](hopfield/network.py).
 
 ### Quick Example
 
@@ -179,7 +179,7 @@ plot_energy(history)
 ## Repository Structure
 
 ```
-hopfield_app/
+hopmemo/
 ├── hopfield/                  # Core library (importable package)
 │   ├── __init__.py
 │   ├── network.py             # HopfieldNetwork class
@@ -189,15 +189,15 @@ hopfield_app/
 │   ├── icons.py               # Procedural icon patterns
 │   └── openml.py              # MNIST / Fashion-MNIST / Kuzushiji loader
 ├── apps/                      # Interactive frontends
-│   ├── streamlit_app.py       # Web app (Streamlit)
+│   ├── streamlit_app.py       # Web app (Streamlit) — also mirrored at root
 │   └── tk_app.py              # Desktop GUI (Tkinter)
 ├── notebooks/                 # Demo notebooks
 │   ├── hopfield_demo.ipynb
 │   ├── alnum_dataset_demo.ipynb
 │   ├── icon_dataset_demo.ipynb
 │   └── openml_datasets_demo.ipynb
-├── requirements.txt           # Core dependency (numpy)
-├── requirements-app.txt       # Full dependencies for running the apps
+├── streamlit_app.py           # Streamlit Cloud entry point (root-level)
+├── requirements.txt           # All dependencies
 └── README.md
 ```
 
@@ -205,12 +205,6 @@ hopfield_app/
 
 ## Dependencies
 
-**Core library only** (just `HopfieldNetwork` + datasets):
 ```bash
 pip install -r requirements.txt
-```
-
-**Full install** (includes Streamlit app and visualization):
-```bash
-pip install -r requirements-app.txt
 ```
